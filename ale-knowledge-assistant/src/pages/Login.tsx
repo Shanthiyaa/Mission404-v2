@@ -1,14 +1,14 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Brain, Building2, Search, FileText, Quote, Zap,
   Shield, ChevronRight, Eye, EyeOff, ArrowRight,
   CheckCircle2, Users, Database, Clock
 } from 'lucide-react'
 
-interface LoginProps { onLogin: () => void; onToggleDark: () => void }
+interface LoginProps { onLogin: (user: { name: string; email: string; department: string }) => void; onToggleDark: () => void }
 
-type AuthMode = 'login' | 'signup' | 'forgot'
+type AuthMode = 'login' | 'forgot'
 
 const FEATURES = [
   {
@@ -44,12 +44,13 @@ export default function Login({ onLogin }: LoginProps) {
   const [mode, setMode]           = useState<AuthMode>('login')
   const [email, setEmail]         = useState('')
   const [password, setPassword]   = useState('')
-  const [name, setName]           = useState('')
   const [showPass, setShowPass]   = useState(false)
   const [errors, setErrors]       = useState<Record<string, string>>({})
   const [forgotSent, setForgotSent] = useState(false)
   const [loading, setLoading]     = useState(false)
   const navigate = useNavigate()
+  const location = useLocation()
+  const [showSuccess, setShowSuccess] = useState(!!location.state?.signupSuccess)
 
   const validate = () => {
     const e: Record<string, string> = {}
@@ -57,9 +58,8 @@ export default function Login({ onLogin }: LoginProps) {
     else if (!/\S+@\S+\.\S+/.test(email)) e.email = 'Enter a valid email'
     if (mode !== 'forgot') {
       if (!password) e.password = 'Password is required'
-      else if (password.length < 6) e.password = 'At least 6 characters'
+      else if (password.length < 8) e.password = 'Enter 8 character password'
     }
-    if (mode === 'signup' && !name.trim()) e.name = 'Full name is required'
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -68,11 +68,35 @@ export default function Login({ onLogin }: LoginProps) {
     e.preventDefault()
     if (!validate()) return
     if (mode === 'forgot') { setForgotSent(true); return }
-    setLoading(true)
-    await new Promise(r => setTimeout(r, 800))
-    setLoading(false)
-    onLogin()
-    navigate('/dashboard')
+
+    if (mode === 'login') {
+      setLoading(true)
+      await new Promise(r => setTimeout(r, 600))
+      setLoading(false)
+
+      // Check against registered users in localStorage
+      let users: Array<{ name: string; email: string; department: string; password: string }> = []
+      try {
+        users = JSON.parse(localStorage.getItem('ale_users') || '[]')
+        if (!Array.isArray(users)) users = []
+      } catch (err) {
+        users = []
+      }
+      
+      const matchedUser = users.find(u => u.email === email)
+
+      if (!matchedUser) {
+        setErrors({ email: 'register before login' })
+        return
+      }
+      if (matchedUser.password !== password) {
+        setErrors({ password: 'Incorrect password. Please try again.' })
+        return
+      }
+
+      onLogin({ name: matchedUser.name, email: matchedUser.email, department: matchedUser.department })
+      navigate('/dashboard')
+    }
   }
 
   const switchMode = (m: AuthMode) => {
@@ -278,12 +302,6 @@ export default function Login({ onLogin }: LoginProps) {
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Sign in to your ALE Knowledge account</p>
                 </>
               )}
-              {mode === 'signup' && (
-                <>
-                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white tracking-tight">Create account</h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Join your team's knowledge base</p>
-                </>
-              )}
               {mode === 'forgot' && (
                 <>
                   <h2 className="text-xl font-semibold text-gray-900 dark:text-white tracking-tight">Reset password</h2>
@@ -291,6 +309,18 @@ export default function Login({ onLogin }: LoginProps) {
                 </>
               )}
             </div>
+
+            {showSuccess && (
+              <div className="mb-6 p-4 bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 rounded-xl text-sm flex items-center gap-3">
+                <CheckCircle2 size={18} className="text-purple-600 dark:text-purple-400 flex-shrink-0" />
+                <div className="flex-1 leading-normal">
+                  Account created successfully! Please sign in.
+                </div>
+                <button onClick={() => setShowSuccess(false)} className="text-purple-400 hover:text-purple-600 dark:hover:text-purple-200 font-semibold text-lg leading-none">
+                  &times;
+                </button>
+              </div>
+            )}
 
             {/* Forgot success state */}
             {forgotSent ? (
@@ -316,28 +346,6 @@ export default function Login({ onLogin }: LoginProps) {
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-4">
-
-                {/* Name field (signup only) */}
-                {mode === 'signup' && (
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
-                      Full name
-                    </label>
-                    <input
-                      type="text"
-                      value={name}
-                      onChange={e => setName(e.target.value)}
-                      placeholder="Thirumalaikumar"
-                      className={`w-full rounded-lg border px-3.5 py-2.5 text-sm outline-none transition-all
-                        dark:bg-gray-800 dark:text-white
-                        ${errors.name
-                          ? 'border-red-400 focus:border-red-400 focus:ring-2 focus:ring-red-100'
-                          : 'border-gray-200 dark:border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 dark:focus:ring-purple-900/30'
-                        }`}
-                    />
-                    {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
-                  </div>
-                )}
 
                 {/* Email */}
                 <div>
@@ -416,7 +424,6 @@ export default function Login({ onLogin }: LoginProps) {
                   ) : (
                     <>
                       {mode === 'login' && 'Sign in'}
-                      {mode === 'signup' && 'Create account'}
                       {mode === 'forgot' && 'Send reset link'}
                       <ArrowRight size={15} />
                     </>
@@ -439,7 +446,12 @@ export default function Login({ onLogin }: LoginProps) {
 
                 <button
                   type="button"
-                  onClick={() => { onLogin(); navigate('/dashboard') }}
+                  onClick={() => {
+                    // SSO: create a guest session
+                    const ssoUser = { name: 'ALE SSO User', email: 'sso@ale.com', department: 'ALE' }
+                    onLogin(ssoUser)
+                    navigate('/dashboard')
+                  }}
                   className="w-full flex items-center justify-center gap-2 border border-gray-200 dark:border-gray-700 rounded-lg py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors font-medium"
                 >
                   <Building2 size={15} className="text-purple-600" />
@@ -453,7 +465,7 @@ export default function Login({ onLogin }: LoginProps) {
               <p className="text-center text-xs text-gray-500 mt-5">
                 {mode === 'login' ? (
                   <>Don't have an account?{' '}
-                    <button onClick={() => switchMode('signup')} className="text-purple-600 font-semibold hover:text-purple-700">
+                    <button onClick={() => navigate('/signup')} className="text-purple-600 font-semibold hover:text-purple-700">
                       Sign up
                     </button>
                   </>
