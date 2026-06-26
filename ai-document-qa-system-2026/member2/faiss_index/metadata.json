@@ -1,0 +1,17 @@
+[
+  {
+    "text": "Hello Timer triggers every 100 ms",
+    "page": 10,
+    "source_file": "SFS.pdf"
+  },
+  {
+    "text": "Hello Timer validation ensures timing accuracy",
+    "page": 12,
+    "source_file": "SFS.pdf"
+  },
+  {
+    "text": "Hello Timer can be stopped and restarted programmatically",
+    "page": 15,
+    "source_file": "SFS.pdf"
+  }
+]

@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --p: #6F42C1;
+    --p2: #A78BFA;
+    --p3: #EDE9FE;
+  }
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
+  }
+  .dark body {
+    @apply bg-gray-950 text-gray-100;
+  }
+}
+
+@layer components {
+  .sidebar-item {
+    @apply flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer text-white/60 text-sm transition-all duration-150 hover:bg-white/10 hover:text-white/90;
+  }
+  .sidebar-item.active {
+    @apply bg-purple-600 text-white;
+  }
+  .card {
+    @apply bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-4;
+  }
+  .badge {
+    @apply text-xs px-2 py-0.5 rounded-full font-normal;
+  }
+  .btn-primary {
+    @apply bg-purple-600 hover:bg-purple-700 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm;
+  }
+  .btn-secondary {
+    @apply bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium px-4 py-2 rounded-lg transition-colors text-sm;
+  }
+  .input {
+    @apply w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all;
+  }
+  .stat-card {
+    @apply bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-4;
+  }
+}
+
+.typing-dot {
+  animation: typing 1.2s infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typing {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+.dark ::-webkit-scrollbar-thumb { background: #374151; }

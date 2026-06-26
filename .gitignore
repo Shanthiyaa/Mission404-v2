@@ -1,0 +1,15 @@
+node_modules/
+venv/
+__pycache__/
+*.pyc
+.env
+data/
+uploaded_docs/
+dist/
+*.faiss
+*.zip
+*.rar
+faiss_index/
+**/faiss_index/
+**/data/
+**/uploaded_docs/

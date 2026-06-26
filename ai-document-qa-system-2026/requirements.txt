@@ -1,0 +1,25 @@
+# ── Extraction & chunking ─────────────────────────────────────────────────────
+docling>=2.100.0
+langchain>=0.1.0
+langchain-community>=0.3.0
+langchain-ollama>=0.3.0
+langchain-text-splitters>=0.2.0
+langdetect>=1.0.9
+
+# ── Embeddings ────────────────────────────────────────────────────────────────
+sentence-transformers>=2.7.0
+
+# ── Vector store ──────────────────────────────────────────────────────────────
+faiss-cpu>=1.8.0
+numpy>=1.24.0
+
+# ── LLM ──────────────────────────────────────────────────────────────────────
+ollama>=0.3.0
+
+# ── API server  (NEW) ─────────────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+
+# ── Streamlit (original UI — unchanged) ──────────────────────────────────────
+streamlit>=1.35.0
