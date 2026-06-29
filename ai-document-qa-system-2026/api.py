@@ -7,7 +7,6 @@ Place this file in the ROOT of ai-document-qa-system-2026/
 (same level as config.py, member1/, member2/, member3/)
 """
 
-
 import os
 import sys
 import json
@@ -24,7 +23,7 @@ from contextlib import asynccontextmanager
 # ── FastAPI ───────────────────────────────────────────────────────────────────
 from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 
 # ── Shared config ─────────────────────────────────────────────────────────────
@@ -35,6 +34,7 @@ from config import (
     OLLAMA_MODEL,
     OLLAMA_BASE_URL,
     TOP_K_RESULTS,
+    RAG_PROMPT_TEMPLATE,
 )
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -61,17 +61,16 @@ _retriever_cache = {"loaded": False}
 # ── Stats counter ─────────────────────────────────────────────────────────────
 _query_counter = {"total": 0, "confidence_sum": 0.0}
 
-# ── FIX 1: Lock to prevent concurrent uploads from corrupting the FAISS index ─
+# ── Lock to prevent concurrent uploads from corrupting the FAISS index ────────
 _faiss_lock = threading.Lock()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  FIX 2: Lifespan replaces deprecated @app.on_event("startup")
+#  Lifespan
 # ══════════════════════════════════════════════════════════════════════════════
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ── startup ───────────────────────────────────────────────────────────────
     _ensure_retriever()
     log.info("ALE Knowledge API started.")
     log.info(f"  Upload dir  : {UPLOAD_PATH.resolve()}")
@@ -79,10 +78,9 @@ async def lifespan(app: FastAPI):
     log.info(f"  Ollama model: {OLLAMA_MODEL} @ {OLLAMA_BASE_URL}")
     log.info(f"  FAISS ready : {_retriever_cache['loaded']}")
     yield
-    # ── shutdown (nothing to clean up) ────────────────────────────────────────
 
 
-# ── App (lifespan passed here) ────────────────────────────────────────────────
+# ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(title="ALE Knowledge API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
@@ -145,7 +143,6 @@ def _format_time_ago(iso_str: str) -> str:
 
 
 def _get_pdf_page_count(filepath: Path) -> int:
-    """Get PDF page count without heavy dependencies."""
     try:
         import re
         data = filepath.read_bytes()
@@ -164,7 +161,6 @@ def _human_size(bytes_: int) -> str:
 
 
 def _ensure_retriever():
-    """Mark FAISS as ready if index files exist on disk."""
     idx_file  = FAISS_PATH / "index.faiss"
     meta_file = FAISS_PATH / "metadata.json"
     _retriever_cache["loaded"] = idx_file.exists() and meta_file.exists()
@@ -175,15 +171,11 @@ def _ensure_retriever():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _run_pipeline(task_id: str, file_path: str, doc_entry: dict) -> None:
-    """
-    Full pipeline: extract → chunk → embed → FAISS index (merged with existing).
-    Uses _faiss_lock so concurrent uploads don't corrupt each other.
-    """
     t = _tasks[task_id]
     filename = doc_entry["name"]
 
     try:
-        # ── Stage 1: Text extraction ──────────────────────────────────────────
+        # Stage 1: Text extraction
         t.update({"stage": "Extracting text…", "progress": 10})
         log.info(f"[{task_id}] Extracting: {filename}")
 
@@ -196,17 +188,13 @@ def _run_pipeline(task_id: str, file_path: str, doc_entry: dict) -> None:
         t.update({"stage": f"Chunked into {len(documents)} pieces", "progress": 40})
         log.info(f"[{task_id}] Chunks: {len(documents)}")
 
-        # ── Stage 2: Embeddings + FAISS (with lock) ───────────────────────────
-        t.update({"stage": "Generating embeddings…", "progress": 55})
+        # Stage 2: Embeddings + FAISS (with lock)
+        t.update({"stage": f"Generating embeddings for {len(documents)} chunks...", "progress": 55})
         log.info(f"[{task_id}] Embedding…")
 
-        # FIX 3: Merge new chunks with ALL existing chunks before rebuilding.
-        # Previously build_from_chunks_json() only indexed the new file,
-        # destroying every previously uploaded document in the FAISS index.
         with _faiss_lock:
             from member2.vector_store import build_and_persist_faiss_index
 
-            # Convert LangChain Documents → plain dicts with full citation metadata
             new_chunks = [
                 {
                     "text":        d.page_content,
@@ -219,15 +207,14 @@ def _run_pipeline(task_id: str, file_path: str, doc_entry: dict) -> None:
                 }
                 for d in documents
             ]
+            log.info(f"[{task_id}] New chunks to embed: {len(new_chunks)}")
 
-            # Load any chunks already in the FAISS metadata from previous uploads
             existing_chunks: list[dict] = []
             meta_file = FAISS_PATH / "metadata.json"
             if meta_file.exists():
                 try:
                     with open(meta_file, encoding="utf-8") as f:
                         existing_chunks = json.load(f)
-                    # Drop chunks from this same file if re-uploading
                     existing_chunks = [
                         c for c in existing_chunks
                         if c.get("source_file") != filename
@@ -246,7 +233,7 @@ def _run_pipeline(task_id: str, file_path: str, doc_entry: dict) -> None:
         t.update({"stage": "Indexing to FAISS…", "progress": 85})
         log.info(f"[{task_id}] FAISS index built with {len(merged_chunks)} total chunks.")
 
-        # ── Stage 3: Register document ────────────────────────────────────────
+        # Stage 3: Register document
         docs_db = _load_documents_db()
         doc_entry["status"] = "Indexed"
         doc_entry["chunks"] = len(documents)
@@ -254,6 +241,12 @@ def _run_pipeline(task_id: str, file_path: str, doc_entry: dict) -> None:
         _save_documents_db(docs_db)
 
         _retriever_cache["loaded"] = True
+        
+        try:
+            from member2.retriever import clear_cache
+            clear_cache()
+        except ImportError:
+            pass
 
         _append_activity(
             f"{filename} indexed successfully ({len(documents)} chunks)",
@@ -303,13 +296,17 @@ async def upload_document(
     task_id = str(uuid.uuid4())[:8]
     doc_id  = str(uuid.uuid4())[:12]
 
-    # Save file to disk
     dest = UPLOAD_PATH / file.filename
+    if dest.exists():
+        raise HTTPException(
+            status_code=409,
+            detail="This document has already been uploaded."
+        )
+
     contents = await file.read()
     with open(dest, "wb") as f:
         f.write(contents)
 
-    # ── Duplicate detection ───────────────────────────────────────────────────
     try:
         from member1.extractor import is_duplicate
         dup, original = is_duplicate(str(dest))
@@ -400,7 +397,6 @@ async def query(req: QueryRequest):
                 detail="No documents indexed yet. Please upload a PDF first."
             )
 
-    # ── Retrieve relevant chunks ──────────────────────────────────────────────
     try:
         from member2.retriever import retrieve
         chunks = retrieve(req.question, k=req.top_k)
@@ -421,31 +417,26 @@ async def query(req: QueryRequest):
             "session_id": req.session_id,
         }
 
-    # ── Build context for LLM ─────────────────────────────────────────────────
+    # Build context for LLM
     context = "\n\n".join(
         f"[Source: {c['source_file']}, page {c['page']}]\n{c['text']}"
         for c in chunks
     )
 
-    prompt = (
-        "You are an expert technical documentation assistant for enterprise documents.\n"
-        "Answer the question using ONLY the context below. Be specific — include exact\n"
-        "numbers, names, or values from the context.\n"
-        "If the answer is not in the context, say exactly:\n"
-        "\"I couldn't find this in the uploaded documents.\"\n"
-        "Always cite the source file and page number at the end of your answer.\n\n"
-        f"Context:\n{context}\n\n"
-        f"Question: {req.question}\nAnswer:"
-    )
+    prompt = RAG_PROMPT_TEMPLATE.format(context=context, question=req.question)
 
-    # ── Call Ollama ───────────────────────────────────────────────────────────
+    # Call Ollama
     try:
         import ollama
         response = ollama.chat(
             model=OLLAMA_MODEL,
             messages=[{"role": "user", "content": prompt}],
+            options={
+                "num_predict": 1024,
+                "temperature": 0.2,
+            },
         )
-        answer = response.message.content.strip()   # ✅ object access, not dict
+        answer = response.message.content.strip()
     except Exception as exc:
         log.error(f"Ollama error: {exc}", exc_info=True)
         raise HTTPException(
@@ -456,11 +447,9 @@ async def query(req: QueryRequest):
             )
         )
 
-    # ── Compute confidence ────────────────────────────────────────────────────
     avg_score  = sum(c.get("score", 0) for c in chunks) / len(chunks)
     confidence = min(int(avg_score * 100), 99)
 
-    # ── Track stats + activity ────────────────────────────────────────────────
     _query_counter["total"]          += 1
     _query_counter["confidence_sum"] += confidence
     _append_activity(
@@ -468,19 +457,21 @@ async def query(req: QueryRequest):
         color="bg-green-500"
     )
 
-    # ── Format citations — IMPROVED: includes section heading ────────────────
     citations = []
     for i, c in enumerate(chunks):
-        section = c.get("section", "")
+        section   = c.get("section", "")
+        full_text = c["text"]
         citations.append({
-            "source_file": c["source_file"],
-            "page":        c["page"],
-            "section":     section,
-            "score":       round(c.get("score", 0), 3),
-            "text":        c["text"][:300],
-            "confidence":  min(int(c.get("score", 0) * 100), 99),
-            "is_table":    c.get("is_table", False),
+            "source_file":    c["source_file"],
+            "page":           c["page"],
+            "section":        section,
+            "score":          round(c.get("score", 0), 3),
+            "text":           full_text,
+            "text_preview":   full_text[:300],
+            "confidence":     min(int(c.get("score", 0) * 100), 99),
+            "is_table":       c.get("is_table", False),
             "citation_label": f"Source {i+1}",
+            "pdf_anchor":     f"#page={c['page']}",
         })
 
     return {
@@ -520,19 +511,39 @@ async def list_documents():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  VIEW DOCUMENT  —  GET /api/documents/{filename}/view
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/documents/{filename}/view")
+async def view_document(filename: str):
+    """
+    Serve the raw PDF file so the browser can open it.
+    The frontend appends #page=N so the browser PDF viewer
+    jumps directly to the cited page.
+    """
+    pdf_path = UPLOAD_PATH / filename
+    if not pdf_path.exists():
+        raise HTTPException(status_code=404, detail=f"File '{filename}' not found.")
+    return FileResponse(
+        path=str(pdf_path),
+        media_type="application/pdf",
+        filename=filename,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  DELETE DOCUMENT  —  DELETE /api/documents/{doc_id}
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.delete("/api/documents/{doc_id}")
 async def delete_document(doc_id: str):
-    docs = _load_documents_db()
+    docs   = _load_documents_db()
     target = next((d for d in docs if d.get("id") == doc_id), None)
 
     if not target:
         raise HTTPException(status_code=404, detail="Document not found.")
 
     filename = target["name"]
-
     docs = [d for d in docs if d.get("id") != doc_id]
     _save_documents_db(docs)
 
@@ -540,7 +551,6 @@ async def delete_document(doc_id: str):
     if pdf_path.exists():
         pdf_path.unlink()
 
-    # Rebuild FAISS without this document's chunks (also under lock)
     with _faiss_lock:
         meta_file = FAISS_PATH / "metadata.json"
         if meta_file.exists():
@@ -553,6 +563,11 @@ async def delete_document(doc_id: str):
                 try:
                     from member2.vector_store import build_and_persist_faiss_index
                     build_and_persist_faiss_index(remaining)
+                    try:
+                        from member2.retriever import clear_cache
+                        clear_cache()
+                    except ImportError:
+                        pass
                     log.info(f"FAISS rebuilt after deleting {filename} ({len(remaining)} chunks remain)")
                 except Exception as exc:
                     log.error(f"FAISS rebuild failed: {exc}")
