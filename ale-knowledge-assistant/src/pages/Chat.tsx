@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Bot, Send, Plus, FileText, AlertCircle } from 'lucide-react'
+import { Bot, Send, Plus, FileText, AlertCircle, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react'
 import clsx from 'clsx'
 import { queryDocuments } from '../api/client'
 import type { Message } from '../types'
@@ -23,16 +23,94 @@ interface ConversationEntry {
   messages: Message[]
 }
 
+interface CitationCardProps {
+  cite: any
+  index: number
+}
+
+function CitationCard({ cite, index }: CitationCardProps) {
+  const [expanded, setExpanded] = useState(false)
+  const preview  = cite.text_preview ?? cite.text?.slice(0, 300) ?? ''
+  const fullText = cite.text ?? ''
+  const hasMore  = fullText.length > 300
+
+  const anchor = cite.pdf_anchor ?? ("#page=" + cite.page)
+  const pdfUrl = "/api/documents/" + encodeURIComponent(cite.source_file) + "/view" + anchor
+
+  return (
+    <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-2.5">
+
+      {/* Header */}
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-1.5">
+          <FileText size={11} className="text-purple-600 flex-shrink-0" />
+          <span className="text-xs font-semibold text-purple-600">Source {index + 1}</span>
+        </div>
+        <a
+          href={pdfUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-0.5 text-xs text-purple-500 hover:text-purple-700 transition-colors"
+          title={"Open " + cite.source_file + " at page " + cite.page}
+        >
+          Go to source <ExternalLink size={10} className="ml-0.5" />
+        </a>
+      </div>
+
+      {/* Metadata */}
+      <div className="text-xs text-gray-700 dark:text-gray-300 space-y-0.5">
+        <div><span className="text-gray-400">Document:</span> {cite.source_file}</div>
+        <div><span className="text-gray-400">Page:</span> {cite.page}</div>
+        {cite.section && (
+          <div><span className="text-gray-400">Section:</span> {cite.section}</div>
+        )}
+      </div>
+
+      {/* Source passage with expand/collapse */}
+      {preview && (
+        <div className="mt-1.5 border-l-2 border-purple-200 pl-2">
+          <p className="text-xs text-gray-500 dark:text-gray-400 italic">
+            {expanded ? fullText : preview}
+            {!expanded && hasMore && '…'}
+          </p>
+          {hasMore && (
+            <button
+              onClick={() => setExpanded(e => !e)}
+              className="flex items-center gap-0.5 text-xs text-purple-500 hover:text-purple-700 mt-1 transition-colors"
+            >
+              {expanded
+                ? <span className="flex items-center gap-0.5"><ChevronUp size={11} /> Show less</span>
+                : <span className="flex items-center gap-0.5"><ChevronDown size={11} /> Show full passage</span>
+              }
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Confidence bar */}
+      <div className="flex items-center gap-2 mt-1.5">
+        <div className="flex-1 h-1 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+          <div
+            className="h-1 bg-green-500 rounded-full"
+            style={{ width: cite.confidence + "%" }}
+          />
+        </div>
+        <span className="text-xs text-gray-400">{cite.confidence}% match</span>
+      </div>
+    </div>
+  )
+}
+
 export default function Chat() {
   const [conversations, setConversations] = useState<ConversationEntry[]>([
     { id: 1, title: 'New conversation', messages: INITIAL },
   ])
-  const [activeId, setActiveId]   = useState(1)
-  const [input, setInput]         = useState('')
-  const [loading, setLoading]     = useState(false)
-  const [sessionId]               = useState(() => Math.random().toString(36).slice(2))
-  const bottomRef                 = useRef<HTMLDivElement>(null)
-  const textareaRef               = useRef<HTMLTextAreaElement>(null)
+  const [activeId, setActiveId] = useState(1)
+  const [input, setInput]       = useState('')
+  const [loading, setLoading]   = useState(false)
+  const [sessionId]             = useState(() => Math.random().toString(36).slice(2))
+  const bottomRef               = useRef<HTMLDivElement>(null)
+  const textareaRef             = useRef<HTMLTextAreaElement>(null)
 
   const activeConv = conversations.find(c => c.id === activeId)!
   const messages   = activeConv?.messages ?? INITIAL
@@ -52,11 +130,9 @@ export default function Chat() {
     const q = text.trim()
     setInput('')
 
-    // Add user message
     updateMessages(activeId, msgs => [...msgs, { role: 'user', content: q }])
     setLoading(true)
 
-    // Auto-title the conversation from first question
     if (activeConv.title === 'New conversation') {
       setConversations(prev =>
         prev.map(c => c.id === activeId
@@ -68,7 +144,6 @@ export default function Chat() {
 
     try {
       const res = await queryDocuments(q, sessionId)
-
       updateMessages(activeId, msgs => [
         ...msgs,
         {
@@ -87,7 +162,7 @@ export default function Chat() {
             ? 'No documents have been indexed yet. Please upload a PDF first.'
             : e.message?.includes('LLM unavailable')
             ? 'The Ollama LLM is not reachable. Make sure Ollama is running: `ollama serve`'
-            : `Something went wrong: ${e.message}`,
+            : 'Something went wrong: ' + e.message,
           error: true,
         },
       ])
@@ -110,7 +185,8 @@ export default function Chat() {
       </div>
 
       <div className="flex gap-3" style={{ height: 'calc(100vh - 180px)' }}>
-        {/* ── Conversation sidebar ── */}
+
+        {/* Conversation sidebar */}
         <div className="w-48 flex-shrink-0 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl overflow-hidden flex flex-col">
           <div className="p-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
             <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Conversations</span>
@@ -142,7 +218,7 @@ export default function Chat() {
           </div>
         </div>
 
-        {/* ── Chat window ── */}
+        {/* Chat window */}
         <div className="flex-1 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl flex flex-col overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
             <div className="w-7 h-7 bg-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -167,7 +243,7 @@ export default function Chat() {
                     ? 'bg-purple-600 text-white'
                     : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
                 )}>
-                  {m.role === 'assistant' ? <Bot size={13} /> : 'TK'}
+                  {m.role === 'assistant' ? <Bot size={13} /> : 'U'}
                 </div>
 
                 <div className="max-w-[75%]">
@@ -189,39 +265,8 @@ export default function Chat() {
                       <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                         Sources
                       </div>
-                      {m.citations.slice(0, 4).map((cite, ci) => (
-                        <div
-                          key={ci}
-                          className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-2.5"
-                        >
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <FileText size={11} className="text-purple-600 flex-shrink-0" />
-                            <span className="text-xs font-semibold text-purple-600">
-                              Source {ci + 1}
-                            </span>
-                          </div>
-                          <div className="text-xs text-gray-700 dark:text-gray-300 space-y-0.5">
-                            <div><span className="text-gray-400">Document:</span> {cite.source_file}</div>
-                            <div><span className="text-gray-400">Page:</span> {cite.page}</div>
-                            {cite.section && (
-                              <div><span className="text-gray-400">Section:</span> {cite.section}</div>
-                            )}
-                          </div>
-                          {cite.text && (
-                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 line-clamp-2 italic border-l-2 border-purple-200 pl-2">
-                              "{cite.text}"
-                            </div>
-                          )}
-                          <div className="flex items-center gap-2 mt-1.5">
-                            <div className="flex-1 h-1 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-                              <div
-                                className="h-1 bg-green-500 rounded-full"
-                                style={{ width: `${cite.confidence}%` }}
-                              />
-                            </div>
-                            <span className="text-xs text-gray-400">{cite.confidence}% match</span>
-                          </div>
-                        </div>
+                      {m.citations.slice(0, 6).map((cite, ci) => (
+                        <CitationCard key={ci} cite={cite} index={ci} />
                       ))}
                     </div>
                   )}

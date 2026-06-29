@@ -37,6 +37,24 @@ log = logging.getLogger(__name__)
 
 _MD_HEADERS = [("#", "h1"), ("##", "h2"), ("###", "h3")]
 
+# FIX BUG 3: pattern that identifies Table-of-Contents lines (dots + page ref)
+_TOC_LINE_RE = re.compile(r'\.{4,}\s*[\dxliv]', re.I)
+
+
+def _is_toc_chunk(text: str) -> bool:
+    """
+    Return True if this chunk is dominated by TOC lines.
+    TOC chunks waste retrieval slots — they look relevant (they mention topic names)
+    but contain zero instructional content.
+    A chunk is considered TOC when ≥ 40% of its non-empty lines are TOC entries.
+    """
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    if not lines:
+        return False
+    toc_count = sum(1 for l in lines if _TOC_LINE_RE.search(l))
+    return (toc_count / len(lines)) >= 0.40
+
+
 _NOISE_RE = [
     (re.compile(r"Page\s+\d+\s+of\s+\d+", re.I), ""),
     (re.compile(r"©\s*\d{4}[^\n]*",        re.I), ""),
@@ -120,11 +138,26 @@ def extract_pdf(filepath: str) -> dict:
 
         for line in lines:
             line = line.strip()
-            # Detect headings: short lines that look like titles
-            if line and len(line) < 100 and line.isupper():
-                current_section = line
-            elif line and len(line) < 80 and line.endswith(":"):
-                current_section = line.rstrip(":")
+            # FIX BUG 2: Better heading detection for ALE technical manuals.
+            # Old logic caught only ALL-CAPS or lines ending in ":" — missing
+            # most real headings like "Configuring VLANs" and catching noise like
+            # "For example". New rules:
+            #  1. All-caps, 10–80 chars, no digits-only content → chapter heading
+            #  2. Title-case line, 10–80 chars, no trailing punctuation → section heading
+            #  3. Skip lines that look like TOC entries (........number pattern)
+            if not line or len(line) < 8 or len(line) > 80:
+                continue
+            if re.search(r'\.{3,}\s*\d', line):          # TOC line — skip
+                continue
+            if line.isupper() and re.search(r'[A-Z]', line):
+                current_section = line                    # ALL-CAPS chapter heading
+            elif (
+                line[0].isupper()                         # starts with capital
+                and not line.endswith((",", ";", ".", ":", "-"))  # no trailing punct
+                and not re.match(r'^[\d\s\-\.]+$', line)  # not a number-only line
+                and sum(1 for w in line.split() if w and w[0].isupper()) >= 2
+            ):
+                current_section = line                    # Title Case section heading
 
         page_segments.append({
             "text":    text,
@@ -214,6 +247,10 @@ def chunk_extraction(extracted: dict) -> list[Document]:
             for text in sub_chunks:
                 text = text.strip()
                 if len(text.split()) < 8:
+                    continue
+                # FIX BUG 3: skip Table-of-Contents chunks — they match queries
+                # by topic name but contain zero instructional content.
+                if _is_toc_chunk(text):
                     continue
                 h = hashlib.md5(text.encode()).hexdigest()
                 if h in seen:
@@ -325,21 +362,33 @@ def chunk_all_extractions(extractions: list[dict]) -> list[Document]:
 
 def save_chunks_json(documents: list[Document], path: str = CHUNKS_JSON_PATH) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    payload = [
+
+    # Load existing chunks
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    else:
+        payload = []
+
+    # Add only new chunks
+    new_chunks = [
         {
-            "text":        d.page_content,
-            "page":        d.metadata.get("page", d.metadata.get("chunk_index", 0)),
+            "text": d.page_content,
+            "page": d.metadata.get("page", d.metadata.get("chunk_index", 0)),
             "source_file": d.metadata.get("source", ""),
-            "section":     d.metadata.get("section", ""),
-            "doc_type":    d.metadata.get("doc_type", "unknown"),
-            "is_table":    d.metadata.get("is_table", False),
+            "section": d.metadata.get("section", ""),
+            "doc_type": d.metadata.get("doc_type", "unknown"),
+            "is_table": d.metadata.get("is_table", False),
         }
         for d in documents
     ]
+
+    payload.extend(new_chunks)
+
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
-    log.info(f"Chunks saved → {path}  ({len(payload)} chunks)")
 
+    log.info(f"Added {len(new_chunks)} new chunks. Total chunks: {len(payload)}")
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  PUBLIC API
@@ -352,6 +401,7 @@ def process_documents(file_paths: list[str]) -> list[Document]:
     Returns list[Document] ready for member2 FAISS indexing.
     """
     extractions = []
+
     for fp in file_paths:
         try:
             extractions.append(extract_file(fp))
@@ -363,6 +413,7 @@ def process_documents(file_paths: list[str]) -> list[Document]:
 
     documents = chunk_all_extractions(extractions)
     save_chunks_json(documents)
+
     return documents
 
 

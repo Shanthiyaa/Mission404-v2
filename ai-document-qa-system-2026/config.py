@@ -18,13 +18,15 @@ DOC_TYPE_MAP = {
     "kcs":          ["kcs", "article", "kb_", "knowledge"],
 }
 
-# ── Chunking — IMPROVED: larger overlap, smaller chunks for better precision ──
+# ── Chunking — FIX BUG 1: chunk_size was 450 chars (~60 words), far too small
+# for a 1580-page technical manual. Procedures span paragraphs; 900–1200 chars
+# (~150–200 words) keeps steps together and gives the LLM real content to answer from.
 CHUNK_CONFIG = {
-    "user_guide":   {"chunk_size": 500,  "chunk_overlap": 100},
-    "release_note": {"chunk_size": 400,  "chunk_overlap": 80},
-    "sqa":          {"chunk_size": 300,  "chunk_overlap": 60},
-    "kcs":          {"chunk_size": 500,  "chunk_overlap": 100},
-    "unknown":      {"chunk_size": 450,  "chunk_overlap": 90},
+    "user_guide":   {"chunk_size": 1200, "chunk_overlap": 200},
+    "release_note": {"chunk_size": 900,  "chunk_overlap": 150},
+    "sqa":          {"chunk_size": 700,  "chunk_overlap": 120},
+    "kcs":          {"chunk_size": 1000, "chunk_overlap": 180},
+    "unknown":      {"chunk_size": 1000, "chunk_overlap": 180},
 }
 
 # ── Embeddings ────────────────────────────────────────────────────────────────
@@ -32,9 +34,11 @@ EMBEDDING_MODEL  = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DEVICE = "cpu"          # change to "cuda" if GPU available
 EMBEDDING_BATCH_SIZE = 32         # batch size for faster embedding generation
 
-# ── FAISS retrieval — IMPROVED: retrieve more, filter less aggressively ───────
-TOP_K_RESULTS  = 6                # retrieve more chunks for better coverage
-MIN_SIMILARITY = 0.20             # lowered slightly to avoid missing relevant chunks
+# ── FAISS retrieval — FIX BUG 4: TOP_K was 6. With old tiny chunks that was
+# only ~360 words to the LLM. After the chunk size fix above, TOP_K=12 sends
+# ~2400 words — enough for multi-step technical procedures.
+TOP_K_RESULTS  = 12               # retrieve 12 chunks for full-procedure coverage
+MIN_SIMILARITY = 0.20             # keep threshold; don't lower further
 
 # ── Duplicate detection ───────────────────────────────────────────────────────
 ENABLE_DUPLICATE_DETECTION = True  # detect and reject duplicate uploads
@@ -45,23 +49,26 @@ OLLAMA_BASE_URL    = "http://localhost:11434"
 LLM_TEMPERATURE    = 0.1
 LLM_CONTEXT_WINDOW = 4096
 
-# ── RAG Prompt — IMPROVED: forces structured citations in response ─────────────
-RAG_PROMPT_TEMPLATE = """You are an expert technical assistant for enterprise documents.
-Use ONLY the context provided below to answer the question accurately.
+# ── RAG Prompt — FIX BUG 5: Add completeness instruction so model doesn't stop
+# mid-procedure. api.py MUST import and use this template (not its own inline prompt).
+RAG_PROMPT_TEMPLATE = """You are an expert technical assistant for ALE (Alcatel-Lucent Enterprise) documents.
+Use ONLY the context provided below to answer the question accurately and completely.
 If the answer is not found in the context, respond with EXACTLY:
 "I couldn't find this in the uploaded documents."
 
 Rules:
 - Answer only from the context. Never make up information.
-- Be specific and include exact values, names, version numbers from the context.
-- At the end of your answer, always list the sources you used.
+- Be specific: include exact CLI commands, version numbers, parameter names, and values from the context.
+- If the answer involves a procedure or steps, list ALL steps completely — never truncate or summarize mid-procedure.
+- Format multi-step answers as a numbered list.
+- After the answer, list the exact sources (filename and page number) you used.
 
 Context:
 {context}
 
 Question: {question}
 
-Answer (be specific, then list sources used):"""
+Answer (complete, with all steps if applicable):"""
 
 # ── API Server ────────────────────────────────────────────────────────────────
 API_HOST    = "0.0.0.0"
