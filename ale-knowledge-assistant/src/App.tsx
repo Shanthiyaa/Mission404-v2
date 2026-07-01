@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
@@ -15,10 +15,29 @@ interface UserInfo {
   department: string
 }
 
+const USER_STORAGE_KEY = 'ale_user'
+const CHAT_STORAGE_KEY = 'ale_chat_state'
+
 export default function App() {
   const [dark, setDark] = useState(false)
   const [authed, setAuthed] = useState(false)
   const [user, setUser] = useState<UserInfo | null>(null)
+  const [checkingAuth, setCheckingAuth] = useState(true)
+
+  // Rehydrate session from localStorage on first load (fixes refresh -> login redirect)
+  useEffect(() => {
+    const stored = localStorage.getItem(USER_STORAGE_KEY)
+    if (stored) {
+      try {
+        const parsedUser: UserInfo = JSON.parse(stored)
+        setUser(parsedUser)
+        setAuthed(true)
+      } catch {
+        localStorage.removeItem(USER_STORAGE_KEY)
+      }
+    }
+    setCheckingAuth(false)
+  }, [])
 
   const toggleDark = () => {
     setDark(d => !d)
@@ -28,11 +47,19 @@ export default function App() {
   const handleLogin = (u: UserInfo) => {
     setUser(u)
     setAuthed(true)
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(u))
   }
 
   const handleLogout = () => {
     setUser(null)
     setAuthed(false)
+    localStorage.removeItem(USER_STORAGE_KEY)
+    localStorage.removeItem(CHAT_STORAGE_KEY) // clear chat history on sign-out
+  }
+
+  // Wait until we've checked localStorage before deciding to redirect
+  if (checkingAuth) {
+    return null
   }
 
   if (!authed) {

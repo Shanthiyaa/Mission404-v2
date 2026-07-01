@@ -18,6 +18,8 @@ const INITIAL: Message[] = [
   },
 ]
 
+const CHAT_STORAGE_KEY = 'ale_chat_state'
+
 interface ConversationEntry {
   id: number
   title: string
@@ -56,13 +58,13 @@ function GroupedFileSourceCard({ filename, citations }: GroupedFileSourceCardPro
                 </span>
                 <a
                   href={pdfUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-0.5 text-purple-500 hover:text-purple-700 transition-colors font-semibold"
-                  title={`Open ${cite.source_file} at page ${cite.page}`}
-                >
-                  Go to source <ExternalLink size={10} />
-                </a>
+  target="_blank"
+  rel="noopener noreferrer"
+  className="flex items-center gap-0.5 text-purple-500 hover:text-purple-700 transition-colors font-semibold"
+  title={`Open ${cite.source_file} at page ${cite.page}`}
+>
+  Go to source <ExternalLink size={10} />
+</a>
               </div>
               <div className="border-l-2 border-purple-200 dark:border-purple-800 pl-2 bg-gray-50/50 dark:bg-gray-900/20 p-2 rounded-r">
                 <p className="text-xs text-gray-700 dark:text-gray-300 italic whitespace-pre-wrap leading-relaxed">
@@ -81,7 +83,8 @@ function GroupedFileSourceCard({ filename, citations }: GroupedFileSourceCardPro
             </div>
           )
         })}
-      </div>    </div>
+      </div>
+    </div>
   )
 }
 
@@ -265,11 +268,30 @@ function MarkdownRenderer({ content }: MarkdownRendererProps) {
   )
 }
 
+// Helper to safely load persisted chat state
+function loadPersistedChat(): { conversations: ConversationEntry[]; activeId: number } {
+  const fallback = {
+    conversations: [{ id: 1, title: 'New conversation', messages: INITIAL }],
+    activeId: 1,
+  }
+  try {
+    const saved = localStorage.getItem(CHAT_STORAGE_KEY)
+    if (!saved) return fallback
+    const parsed = JSON.parse(saved)
+    if (!parsed?.conversations?.length) return fallback
+    return parsed
+  } catch {
+    return fallback
+  }
+}
+
 export default function Chat() {
-  const [conversations, setConversations] = useState<ConversationEntry[]>([
-    { id: 1, title: 'New conversation', messages: INITIAL },
-  ])
-  const [activeId, setActiveId] = useState(1)
+  const [conversations, setConversations] = useState<ConversationEntry[]>(
+    () => loadPersistedChat().conversations
+  )
+  const [activeId, setActiveId] = useState<number>(
+    () => loadPersistedChat().activeId
+  )
   const [input, setInput]       = useState('')
   const [loading, setLoading]   = useState(false)
   const [sessionId]             = useState(() => Math.random().toString(36).slice(2))
@@ -279,7 +301,7 @@ export default function Chat() {
   const [availableDocs, setAvailableDocs] = useState<Document[]>([])
   const [selectedDocs, setSelectedDocs] = useState<string[]>([])
 
-  const activeConv = conversations.find(c => c.id === activeId)!
+  const activeConv = conversations.find(c => c.id === activeId) ?? conversations[0]
   const messages   = activeConv?.messages ?? INITIAL
 
   useEffect(() => {
@@ -293,6 +315,15 @@ export default function Chat() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
+
+  // Persist conversations + activeId whenever they change (survives nav + refresh)
+  useEffect(() => {
+    try {
+      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify({ conversations, activeId }))
+    } catch (err) {
+      console.error('Failed to persist chat state', err)
+    }
+  }, [conversations, activeId])
 
   const updateMessages = (id: number, updater: (msgs: Message[]) => Message[]) => {
     setConversations(prev =>
