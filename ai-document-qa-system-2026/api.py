@@ -9,6 +9,8 @@ Place this file in the ROOT of ai-document-qa-system-2026/
 
 import os
 import sys
+import re
+
 import json
 import time
 import uuid
@@ -35,6 +37,7 @@ from config import (
     OLLAMA_BASE_URL,
     TOP_K_RESULTS,
     RAG_PROMPT_TEMPLATE,
+    LLM_TEMPERATURE,
 )
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -165,7 +168,13 @@ def _ensure_retriever():
     meta_file = FAISS_PATH / "metadata.json"
     _retriever_cache["loaded"] = idx_file.exists() and meta_file.exists()
 
+GREETING_PATTERN = re.compile(
+    r'^(hi|hello|hey|hy|yo|sup|good\s*(morning|afternoon|evening)|greetings|howdy|thanks|thank\s*you|ok|okay|bye|goodbye)[\s!.,?]*$',
+    re.IGNORECASE
+)
 
+def _is_smalltalk(text: str) -> bool:
+    return bool(GREETING_PATTERN.match(text.strip()))
 # ══════════════════════════════════════════════════════════════════════════════
 #  BACKGROUND PIPELINE TASK
 # ══════════════════════════════════════════════════════════════════════════════
@@ -387,9 +396,18 @@ class QueryRequest(BaseModel):
 
 @app.post("/api/query")
 async def query(req: QueryRequest):
-    if not req.question.strip():
+    q = req.question.strip()
+    if not q:
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
+    if _is_smalltalk(q):
+        return {
+            "answer": "Hello! I'm your Ale Docbot. Ask me anything about your uploaded user guides, release notes, SQA test cases, and KCS articles.",
+            "citations": [],
+            "confidence": 100,
+            "session_id": req.session_id,
+        }
+    
     if not _retriever_cache.get("loaded"):
         _ensure_retriever()
         if not _retriever_cache.get("loaded"):
@@ -434,7 +452,7 @@ async def query(req: QueryRequest):
             messages=[{"role": "user", "content": prompt}],
             options={
                 "num_predict": 4096,
-                "temperature": 0.2,
+                 "temperature": LLM_TEMPERATURE,
             },
         )
         answer = response.message.content.strip()

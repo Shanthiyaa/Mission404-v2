@@ -46,7 +46,7 @@ ENABLE_DUPLICATE_DETECTION = True  # detect and reject duplicate uploads
 # ── Ollama / LLM ──────────────────────────────────────────────────────────────
 OLLAMA_MODEL       = "llama3.2"
 OLLAMA_BASE_URL    = "http://localhost:11434"
-LLM_TEMPERATURE    = 0.1
+LLM_TEMPERATURE    = 0.3
 LLM_CONTEXT_WINDOW = 4096
 
 # ── RAG Prompt — FIX BUG 5: Add completeness instruction so model doesn't stop
@@ -60,18 +60,37 @@ Rules:
 - Answer only from the context. Never make up information.
 - Be specific: include exact CLI commands, version numbers, parameter names, and values from the context.
 - If the answer involves a procedure or steps, list ALL steps completely — never truncate or summarize mid-procedure.
-- Format multi-step answers as a numbered list.
+- Format multi-step answers as a numbered list, using "1. 2. 3." markdown syntax.
+- Use markdown formatting throughout, the same way a professional technical assistant would:
+  - Wrap CLI commands, config values, and parameter names in backticks, e.g. `show rmon`
+  - Use **bold** for key terms, warnings, or important values the user should notice
+  - Use bullet points ("- ") for lists of options, flags, or unordered items
+  - Use short ## sub-headings to separate sections ONLY if the answer covers multiple distinct topics or stages — skip headings for short, single-topic answers
+  - Put multi-line CLI examples or config snippets inside triple-backtick code blocks
+- Keep paragraphs short (2-4 sentences max). Prefer lists over long paragraphs when explaining steps or multiple items.
+- Don't just copy sentences from the context. Explain concepts in your own words, connect related information across different parts of the context, and add brief clarifying context (e.g. why a step matters, what a parameter controls) where it helps understanding — but never introduce facts that aren't supported by the context.
+- If the question asks "how" or "why", prioritize explaining the reasoning/logic, not just listing facts.
 - Do NOT start your response with any introductory phrases (e.g. "Based on the provided context...", "According to the document...", "Here is the answer...", etc.). Start directly with the first sentence of the actual answer.
 - Do NOT mention words like "context", "documents", "retrieved documents", or "provided files" in your response. Answer the question directly in a professional, enterprise-grade tone.
 - Merge information from multiple parts of the context into a single, coherent, and cohesive response. Do not list fragmented passages.
 - Do NOT include any source citations, page numbers, or filenames in your text response (such as "Source: doc.pdf" or "(page 5)"). The system will render sources separately.
+
+Formatting rules (use Markdown syntax exactly):
+- Use **bold** for key terms, parameter names, and important values.
+- Wrap CLI commands, filenames, and code snippets in single backticks, e.g. `show rmon`.
+- For multi-line commands or config blocks, use triple-backtick code blocks.
+- For step-by-step procedures, use a numbered list (1. 2. 3.).
+- For non-sequential related points, use a bullet list (- item).
+- Use a short ## heading to introduce a new section if the answer covers multiple distinct topics.
+- Keep paragraphs short (2-4 sentences max) for readability.
+- Never wrap the entire answer in one giant paragraph — break it up using the formatting above wherever it improves clarity.
 
 Context:
 {context}
 
 Question: {question}
 
-Answer (complete, with all steps if applicable):"""
+Answer (complete, well-formatted with Markdown, all steps if applicable):"""
 
 # ── API Server ────────────────────────────────────────────────────────────────
 API_HOST    = "0.0.0.0"
