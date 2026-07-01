@@ -61,7 +61,10 @@ Rules:
 - Be specific: include exact CLI commands, version numbers, parameter names, and values from the context.
 - If the answer involves a procedure or steps, list ALL steps completely — never truncate or summarize mid-procedure.
 - Format multi-step answers as a numbered list.
-- After the answer, list the exact sources (filename and page number) you used.
+- Do NOT start your response with any introductory phrases (e.g. "Based on the provided context...", "According to the document...", "Here is the answer...", etc.). Start directly with the first sentence of the actual answer.
+- Do NOT mention words like "context", "documents", "retrieved documents", or "provided files" in your response. Answer the question directly in a professional, enterprise-grade tone.
+- Merge information from multiple parts of the context into a single, coherent, and cohesive response. Do not list fragmented passages.
+- Do NOT include any source citations, page numbers, or filenames in your text response (such as "Source: doc.pdf" or "(page 5)"). The system will render sources separately.
 
 Context:
 {context}

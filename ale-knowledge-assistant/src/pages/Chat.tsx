@@ -81,7 +81,186 @@ function GroupedFileSourceCard({ filename, citations }: GroupedFileSourceCardPro
             </div>
           )
         })}
-      </div>
+      </div>    </div>
+  )
+}
+
+function cleanIntroductoryPhrases(text: string): string {
+  let cleaned = text.trim();
+  
+  const patterns = [
+    /^(based\s+on\s+the\s+(provided\s+|uploaded\s+|retrieved\s+)?(context|documents?|files?|information|text)[,\s]*)+/i,
+    /^(according\s+to\s+the\s+(provided\s+|uploaded\s+|retrieved\s+)?(context|documents?|files?|information|text)[,\s]*)+/i,
+    /^(in\s+the\s+(provided\s+|uploaded\s+)?(context|documents?|files?)[,\s]*)+/i,
+    /^(based\s+on\s+our\s+context[,\s]*)+/i,
+    /^(according\s+to\s+our\s+documents?[,\s]*)+/i,
+    /^(here\s+is\s+the\s+answer:?\s*)+/i,
+    /^(here\s+is\s+a\s+(direct\s+)?answer:?\s*)+/i,
+    /^(here\s+is\s+a\s+summary\s+of\s+the\s+answer:?\s*)+/i,
+    /^(according\s+to\s+the\s+information\s+provided[,\s]*)+/i,
+    /^(based\s+on\s+the\s+information\s+provided[,\s]*)+/i,
+    /^(referring\s+to\s+the\s+(provided\s+|uploaded\s+)?(context|documents?|files?)[,\s]*)+/i,
+    /^(based\s+on\s+the\s+context\s+provided[,\s]*)+/i,
+    /^(according\s+to\s+the\s+context\s+provided[,\s]*)+/i,
+    /^(the\s+(provided\s+|uploaded\s+|retrieved\s+)?(context|documents?|files?)\s+(states?|shows?|indicates?|provides?|explains?|details?)\s+that[,\s]*)+/i,
+    /^(from\s+the\s+(provided\s+|uploaded\s+|retrieved\s+)?(context|documents?|files?)[,\s]*)+/i
+  ];
+  
+  let matchFound = true;
+  while (matchFound) {
+    matchFound = false;
+    for (const pattern of patterns) {
+      if (pattern.test(cleaned)) {
+        cleaned = cleaned.replace(pattern, '').trim();
+        matchFound = true;
+      }
+    }
+  }
+  
+  // Clean up any remaining leading punctuation like commas or spaces
+  cleaned = cleaned.replace(/^[,\s.:;-]+/, '').trim();
+  
+  if (cleaned.length > 0) {
+    cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  }
+  
+  return cleaned;
+}
+
+interface MarkdownRendererProps {
+  content: string
+}
+
+function MarkdownRenderer({ content }: MarkdownRendererProps) {
+  const cleanedContent = cleanIntroductoryPhrases(content)
+  const parts = cleanedContent.split(/(```[\s\S]*?```)/g)
+
+  const renderTextWithInlineFormatting = (text: string) => {
+    const inlineRegex = /(\*\*.*?\*\*|`.*?`)/g
+    const segments = text.split(inlineRegex)
+    return segments.map((seg, sIdx) => {
+      if (seg.startsWith('**') && seg.endsWith('**')) {
+        return (
+          <strong key={sIdx} className="font-semibold text-gray-900 dark:text-white">
+            {seg.slice(2, -2)}
+          </strong>
+        )
+      } else if (seg.startsWith('`') && seg.endsWith('`')) {
+        return (
+          <code key={sIdx} className="bg-gray-150 dark:bg-gray-800/80 px-1 py-0.5 rounded font-mono text-[0.9em] border border-gray-200 dark:border-gray-700/40 text-purple-600 dark:text-purple-400">
+            {seg.slice(1, -1)}
+          </code>
+        )
+      } else {
+        return seg
+      }
+    })
+  }
+
+  return (
+    <div className="text-gray-800 dark:text-gray-200" style={{ fontSize: '17px', lineHeight: '1.7' }}>
+      {parts.map((part, index) => {
+        if (part.startsWith('```') && part.endsWith('```')) {
+          const lines = part.slice(3, -3).trim().split('\n')
+          const hasLang = lines.length > 0 && /^[a-zA-Z0-9_-]+$/.test(lines[0])
+          const codeLines = hasLang ? lines.slice(1) : lines
+          const code = codeLines.join('\n')
+
+          return (
+            <pre key={index} className="bg-gray-50 dark:bg-gray-800/60 p-3 rounded-lg overflow-x-auto border border-gray-200 dark:border-gray-700/50 font-mono text-sm leading-normal my-3">
+              <code>{code}</code>
+            </pre>
+          )
+        }
+
+        const lines = part.split('\n')
+        const elements: React.ReactNode[] = []
+        let currentList: { type: 'ul' | 'ol'; items: React.ReactNode[] } | null = null
+
+        const flushList = (key: number) => {
+          if (currentList) {
+            const ListTag = currentList.type
+            const listClasses = currentList.type === 'ul' ? 'list-disc pl-5' : 'list-decimal pl-5'
+            elements.push(
+              <ListTag key={`list-${key}`} className={`${listClasses} space-y-3 my-4`}>
+                {currentList.items.map((item, itemIdx) => (
+                  <li key={itemIdx} className="text-gray-800 dark:text-gray-200">
+                    {item}
+                  </li>
+                ))}
+              </ListTag>
+            )
+            currentList = null
+          }
+        }
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i]
+          const trimmed = line.trim()
+
+          if (!trimmed) {
+            flushList(i)
+            continue
+          }
+
+          // Check for headers
+          const headerMatch = line.match(/^(#{1,3})\s+(.*)$/)
+          if (headerMatch) {
+            flushList(i)
+            const level = headerMatch[1].length
+            const headingText = headerMatch[2]
+            const headingContent = renderTextWithInlineFormatting(headingText)
+
+            if (level === 1) {
+              elements.push(<h1 key={i} className="text-xl font-bold text-gray-900 dark:text-white mt-4 mb-2">{headingContent}</h1>)
+            } else if (level === 2) {
+              elements.push(<h2 key={i} className="text-lg font-bold text-gray-900 dark:text-white mt-3.5 mb-2">{headingContent}</h2>)
+            } else {
+              elements.push(<h3 key={i} className="text-md font-semibold text-gray-900 dark:text-white mt-3 mb-1.5">{headingContent}</h3>)
+            }
+            continue
+          }
+
+          // Check for bullet list
+          const bulletMatch = line.match(/^[-*+]\s+(.*)$/)
+          if (bulletMatch) {
+            const itemText = bulletMatch[1]
+            const itemContent = renderTextWithInlineFormatting(itemText)
+            if (currentList && currentList.type === 'ul') {
+              currentList.items.push(itemContent)
+            } else {
+              flushList(i)
+              currentList = { type: 'ul', items: [itemContent] }
+            }
+            continue
+          }
+
+          // Check for numbered list
+          const numberMatch = line.match(/^(\d+)\.\s+(.*)$/)
+          if (numberMatch) {
+            const itemText = numberMatch[2]
+            const itemContent = renderTextWithInlineFormatting(itemText)
+            if (currentList && currentList.type === 'ol') {
+              currentList.items.push(itemContent)
+            } else {
+              flushList(i)
+              currentList = { type: 'ol', items: [itemContent] }
+            }
+            continue
+          }
+
+          // Normal paragraph text
+          flushList(i)
+          elements.push(
+            <p key={i} className="text-gray-800 dark:text-gray-200 mb-4 last:mb-0">
+              {renderTextWithInlineFormatting(line)}
+            </p>
+          )
+        }
+        flushList(lines.length)
+
+        return <div key={index}>{elements}</div>
+      })}
     </div>
   )
 }
@@ -298,18 +477,25 @@ export default function Chat() {
                   {m.role === 'assistant' ? <Bot size={13} /> : 'U'}
                 </div>
 
-                <div className="max-w-[75%]">
-                  <div className={clsx(
-                    'px-3.5 py-2.5 rounded-xl text-sm leading-relaxed',
-                    m.role === 'assistant'
-                      ? m.error
+                <div className={m.role === 'assistant' ? 'flex-1 max-w-[85%]' : 'max-w-[75%]'}>
+                  {m.role === 'assistant' && !m.error ? (
+                    <div className="text-gray-850 dark:text-gray-205 py-1">
+                      <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">
+                        Answer
+                      </div>
+                      <MarkdownRenderer content={m.content} />
+                    </div>
+                  ) : (
+                    <div className={clsx(
+                      'px-3.5 py-2.5 rounded-xl text-sm leading-relaxed',
+                      m.role === 'assistant'
                         ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-100 dark:border-red-800'
-                        : 'bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-100 dark:border-gray-700'
-                      : 'bg-purple-600 text-white'
-                  )}>
-                    {m.error && <AlertCircle size={13} className="inline mr-1 mb-0.5" />}
-                    {m.content}
-                  </div>
+                        : 'bg-purple-600 text-white'
+                    )}>
+                      {m.error && <AlertCircle size={13} className="inline mr-1 mb-0.5" />}
+                      {m.content}
+                    </div>
+                  )}
 
                   {/* Citations */}
                   {m.citations && m.citations.length > 0 && (() => {
@@ -324,9 +510,9 @@ export default function Chat() {
                     const groupedList = Object.entries(groups)
 
                     return (
-                      <div className="mt-2.5 space-y-2.5">
+                      <div className="mt-4 space-y-2.5">
                         <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                          Sources
+                          Source References
                         </div>
                         {groupedList.map(([filename, list]) => (
                           <GroupedFileSourceCard
