@@ -31,9 +31,9 @@ def clear_cache():
     _metadata_cache = None
 
 
-def retrieve(query: str, index_path: str = None, k: int = None) -> list:
+def retrieve(query: str, index_path: str = None, k: int = None, doc_files: list[str] = None) -> list:
     """
-    Retrieve the most relevant chunks from FAISS.
+    Retrieve the most relevant chunks from FAISS, optionally filtering by specific source files.
     """
 
     global _index_cache, _metadata_cache
@@ -74,8 +74,12 @@ def retrieve(query: str, index_path: str = None, k: int = None) -> list:
 
     q_vec = q_vec / q_norm
 
-    # Retrieve extra results for deduplication
-    search_k = min(k * 3, len(metadata))
+    # If filtering by specific files, query the entire index to find matches,
+    # otherwise query standard extra results for deduplication.
+    if doc_files:
+        search_k = len(metadata)
+    else:
+        search_k = min(k * 3, len(metadata))
 
     D, I = index.search(q_vec, search_k)
 
@@ -89,6 +93,11 @@ def retrieve(query: str, index_path: str = None, k: int = None) -> list:
             continue
 
         item = metadata[idx]
+        
+        # Apply document filter if specified
+        if doc_files and item.get("source_file") not in doc_files:
+            continue
+
         text = item.get("text", "")
 
         # Remove duplicate chunks

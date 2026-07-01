@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
-import { Bot, Send, Plus, FileText, AlertCircle, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react'
+import { Bot, Send, Plus, FileText, AlertCircle, ExternalLink, Filter } from 'lucide-react'
 import clsx from 'clsx'
-import { queryDocuments } from '../api/client'
+import { queryDocuments, listDocuments } from '../api/client'
 import type { Message } from '../types'
+import type { Document } from '../api/client'
 
 const SUGGESTIONS = [
   'What changed in the latest release?',
@@ -13,7 +14,7 @@ const SUGGESTIONS = [
 const INITIAL: Message[] = [
   {
     role: 'assistant',
-    content: "Hello! I'm your ALE Knowledge Assistant. Ask me anything about your uploaded user guides, release notes, SQA test cases, and KCS articles.",
+    content: "Hello! I'm your Ale Docbot. Ask me anything about your uploaded user guides, release notes, SQA test cases, and KCS articles.",
   },
 ]
 
@@ -23,79 +24,63 @@ interface ConversationEntry {
   messages: Message[]
 }
 
-interface CitationCardProps {
-  cite: any
-  index: number
+interface GroupedFileSourceCardProps {
+  filename: string
+  citations: any[]
 }
 
-function CitationCard({ cite, index }: CitationCardProps) {
-  const [expanded, setExpanded] = useState(false)
-  const preview  = cite.text_preview ?? cite.text?.slice(0, 300) ?? ''
-  const fullText = cite.text ?? ''
-  const hasMore  = fullText.length > 300
-
-  const anchor = cite.pdf_anchor ?? ("#page=" + cite.page)
-  const pdfUrl = "/api/documents/" + encodeURIComponent(cite.source_file) + "/view" + anchor
-
+function GroupedFileSourceCard({ filename, citations }: GroupedFileSourceCardProps) {
   return (
-    <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-2.5">
-
+    <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-3">
       {/* Header */}
-      <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-1.5">
-          <FileText size={11} className="text-purple-600 flex-shrink-0" />
-          <span className="text-xs font-semibold text-purple-600">Source {index + 1}</span>
-        </div>
-        <a
-          href={pdfUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-0.5 text-xs text-purple-500 hover:text-purple-700 transition-colors"
-          title={"Open " + cite.source_file + " at page " + cite.page}
-        >
-          Go to source <ExternalLink size={10} className="ml-0.5" />
-        </a>
+      <div className="flex items-center gap-1.5 mb-2 pb-1.5 border-b border-gray-100 dark:border-gray-700/60">
+        <FileText size={14} className="text-purple-600 flex-shrink-0" />
+        <span className="text-sm font-semibold text-gray-900 dark:text-white truncate max-w-[190px]" title={filename}>
+          {filename}
+        </span>
+        <span className="text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 rounded ml-auto">
+          {citations.length} {citations.length === 1 ? 'finding' : 'findings'}
+        </span>
       </div>
 
-      {/* Metadata */}
-      <div className="text-xs text-gray-700 dark:text-gray-300 space-y-0.5">
-        <div><span className="text-gray-400">Document:</span> {cite.source_file}</div>
-        <div><span className="text-gray-400">Page:</span> {cite.page}</div>
-        {cite.section && (
-          <div><span className="text-gray-400">Section:</span> {cite.section}</div>
-        )}
-      </div>
-
-      {/* Source passage with expand/collapse */}
-      {preview && (
-        <div className="mt-1.5 border-l-2 border-purple-200 pl-2">
-          <p className="text-xs text-gray-500 dark:text-gray-400 italic">
-            {expanded ? fullText : preview}
-            {!expanded && hasMore && '…'}
-          </p>
-          {hasMore && (
-            <button
-              onClick={() => setExpanded(e => !e)}
-              className="flex items-center gap-0.5 text-xs text-purple-500 hover:text-purple-700 mt-1 transition-colors"
-            >
-              {expanded
-                ? <span className="flex items-center gap-0.5"><ChevronUp size={11} /> Show less</span>
-                : <span className="flex items-center gap-0.5"><ChevronDown size={11} /> Show full passage</span>
-              }
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Confidence bar */}
-      <div className="flex items-center gap-2 mt-1.5">
-        <div className="flex-1 h-1 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-          <div
-            className="h-1 bg-green-500 rounded-full"
-            style={{ width: cite.confidence + "%" }}
-          />
-        </div>
-        <span className="text-xs text-gray-400">{cite.confidence}% match</span>
+      {/* Findings list */}
+      <div className="space-y-3">
+        {citations.map((cite, ci) => {
+          const anchor = cite.pdf_anchor ?? ("#page=" + cite.page)
+          const pdfUrl = "/api/documents/" + encodeURIComponent(cite.source_file) + "/view" + anchor
+          return (
+            <div key={ci} className="text-xs border-b border-gray-50 dark:border-gray-850 last:border-b-0 pb-2 last:pb-0">
+              <div className="flex items-center justify-between text-gray-400 dark:text-gray-500 font-medium mb-1">
+                <span>
+                  Page {cite.page} {cite.section ? `· Section: ${cite.section}` : ''}
+                </span>
+                <a
+                  href={pdfUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-0.5 text-purple-500 hover:text-purple-700 transition-colors font-semibold"
+                  title={`Open ${cite.source_file} at page ${cite.page}`}
+                >
+                  Go to source <ExternalLink size={10} />
+                </a>
+              </div>
+              <div className="border-l-2 border-purple-200 dark:border-purple-800 pl-2 bg-gray-50/50 dark:bg-gray-900/20 p-2 rounded-r">
+                <p className="text-xs text-gray-700 dark:text-gray-300 italic whitespace-pre-wrap leading-relaxed">
+                  {cite.text}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 mt-1.5">
+                <div className="flex-1 h-1 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-1 bg-green-500 rounded-full"
+                    style={{ width: cite.confidence + "%" }}
+                  />
+                </div>
+                <span className="text-[10px] text-gray-405 dark:text-gray-400">{cite.confidence}% match</span>
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -112,8 +97,19 @@ export default function Chat() {
   const bottomRef               = useRef<HTMLDivElement>(null)
   const textareaRef             = useRef<HTMLTextAreaElement>(null)
 
+  const [availableDocs, setAvailableDocs] = useState<Document[]>([])
+  const [selectedDocs, setSelectedDocs] = useState<string[]>([])
+
   const activeConv = conversations.find(c => c.id === activeId)!
   const messages   = activeConv?.messages ?? INITIAL
+
+  useEffect(() => {
+    listDocuments()
+      .then(docs => {
+        setAvailableDocs(docs.filter(d => d.status === 'Indexed'))
+      })
+      .catch(err => console.error('Failed to load documents', err))
+  }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -143,7 +139,7 @@ export default function Chat() {
     }
 
     try {
-      const res = await queryDocuments(q, sessionId)
+      const res = await queryDocuments(q, sessionId, undefined, selectedDocs)
       updateMessages(activeId, msgs => [
         ...msgs,
         {
@@ -180,21 +176,21 @@ export default function Chat() {
   return (
     <div>
       <div className="mb-4">
-        <h1 className="text-xl font-medium text-gray-900 dark:text-white">AI assistant</h1>
+        <h1 className="text-xl font-medium text-gray-900 dark:text-white">Ale Docbot</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Ask questions about your indexed documents</p>
       </div>
 
       <div className="flex gap-3" style={{ height: 'calc(100vh - 180px)' }}>
 
         {/* Conversation sidebar */}
-        <div className="w-48 flex-shrink-0 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl overflow-hidden flex flex-col">
+        <div className="w-64 flex-shrink-0 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl overflow-hidden flex flex-col">
           <div className="p-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
             <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Conversations</span>
-            <button onClick={newConversation} className="text-purple-600 hover:text-purple-700">
+            <button onClick={newConversation} className="text-purple-600 hover:text-purple-700" title="New conversation">
               <Plus size={14} />
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-2">
+          <div className="flex-1 overflow-y-auto p-2 border-b border-gray-100 dark:border-gray-800">
             {conversations.map(c => (
               <div
                 key={c.id}
@@ -216,6 +212,62 @@ export default function Chat() {
               </div>
             ))}
           </div>
+
+          {/* Document selection filter */}
+          <div className="p-3 bg-gray-50/50 dark:bg-gray-900/40 border-t border-gray-100 dark:border-gray-800/60 flex flex-col" style={{ maxHeight: '45%' }}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                <Filter size={11} className="text-purple-600" />
+                <span>Select Document</span>
+              </div>
+              {selectedDocs.length > 0 && (
+                <button
+                  onClick={() => setSelectedDocs([])}
+                  className="text-[10px] text-purple-600 hover:text-purple-700 font-medium"
+                >
+                  Clear Filter
+                </button>
+              )}
+            </div>
+            {availableDocs.length === 0 ? (
+              <div className="text-[11px] text-gray-400 dark:text-gray-400 italic py-1">
+                No documents uploaded.
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto space-y-1.5 max-h-40 pr-1">
+                {availableDocs.map(doc => {
+                  const isChecked = selectedDocs.includes(doc.name)
+                  return (
+                    <label
+                      key={doc.id}
+                      className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white cursor-pointer select-none"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {
+                          setSelectedDocs(prev =>
+                            isChecked
+                              ? prev.filter(name => name !== doc.name)
+                              : [...prev, doc.name]
+                          )
+                        }}
+                        className="mt-0.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                      />
+                      <span className="truncate" title={doc.name}>
+                        {doc.name}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+            {selectedDocs.length > 0 && (
+              <div className="text-[10px] text-purple-600 dark:text-purple-400 font-medium mt-1.5 pt-1.5 border-t border-gray-100 dark:border-gray-800/40">
+                Searching {selectedDocs.length} selected document{selectedDocs.length > 1 ? 's' : ''}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Chat window */}
@@ -225,7 +277,7 @@ export default function Chat() {
               <Bot size={14} className="text-white" />
             </div>
             <div className="flex-1">
-              <div className="text-sm font-medium text-gray-900 dark:text-white">ALE Knowledge Assistant</div>
+              <div className="text-sm font-medium text-gray-900 dark:text-white">Ale Docbot</div>
               <div className="text-xs text-gray-400">Searching across indexed documents</div>
             </div>
             <span className="text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-600 px-2.5 py-1 rounded-full font-mono">
@@ -260,16 +312,32 @@ export default function Chat() {
                   </div>
 
                   {/* Citations */}
-                  {m.citations && m.citations.length > 0 && (
-                    <div className="mt-2 space-y-2">
-                      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                        Sources
+                  {m.citations && m.citations.length > 0 && (() => {
+                    // Group citations by source_file
+                    const groups: { [filename: string]: any[] } = {}
+                    m.citations.forEach(c => {
+                      if (!groups[c.source_file]) {
+                        groups[c.source_file] = []
+                      }
+                      groups[c.source_file].push(c)
+                    })
+                    const groupedList = Object.entries(groups)
+
+                    return (
+                      <div className="mt-2.5 space-y-2.5">
+                        <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Sources
+                        </div>
+                        {groupedList.map(([filename, list]) => (
+                          <GroupedFileSourceCard
+                            key={filename}
+                            filename={filename}
+                            citations={list}
+                          />
+                        ))}
                       </div>
-                      {m.citations.slice(0, 6).map((cite, ci) => (
-                        <CitationCard key={ci} cite={cite} index={ci} />
-                      ))}
-                    </div>
-                  )}
+                    )
+                  })()}
                 </div>
               </div>
             ))}

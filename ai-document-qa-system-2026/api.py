@@ -382,6 +382,7 @@ class QueryRequest(BaseModel):
     question:   str
     session_id: Optional[str] = None
     top_k:      Optional[int] = TOP_K_RESULTS
+    doc_files:  Optional[list[str]] = None
 
 
 @app.post("/api/query")
@@ -399,7 +400,7 @@ async def query(req: QueryRequest):
 
     try:
         from member2.retriever import retrieve
-        chunks = retrieve(req.question, k=req.top_k)
+        chunks = retrieve(req.question, k=req.top_k, doc_files=req.doc_files)
     except FileNotFoundError:
         raise HTTPException(
             status_code=503,
@@ -432,7 +433,7 @@ async def query(req: QueryRequest):
             model=OLLAMA_MODEL,
             messages=[{"role": "user", "content": prompt}],
             options={
-                "num_predict": 1024,
+                "num_predict": 4096,
                 "temperature": 0.2,
             },
         )
@@ -527,7 +528,7 @@ async def view_document(filename: str):
     return FileResponse(
         path=str(pdf_path),
         media_type="application/pdf",
-        filename=filename,
+        headers={"Content-Disposition": f"inline; filename=\"{filename}\""}
     )
 
 

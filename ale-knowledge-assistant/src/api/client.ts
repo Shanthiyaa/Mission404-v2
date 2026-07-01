@@ -97,11 +97,17 @@ export interface QueryResponse {
 export async function queryDocuments(
   question: string,
   sessionId?: string,
-  topK?: number
+  topK?: number,
+  docFiles?: string[]
 ): Promise<QueryResponse> {
   return request<QueryResponse>('/query', {
     method: 'POST',
-    body: JSON.stringify({ question, session_id: sessionId, top_k: topK }),
+    body: JSON.stringify({
+      question,
+      session_id: sessionId,
+      top_k: topK,
+      doc_files: docFiles && docFiles.length > 0 ? docFiles : undefined
+    }),
   })
 }
 
