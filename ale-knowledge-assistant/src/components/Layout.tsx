@@ -1,4 +1,4 @@
-import { ReactNode } from 'react'
+import { ReactNode, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, MessageSquare, Upload, BookOpen,
@@ -30,6 +30,14 @@ export default function Layout({ children, onLogout, dark, onToggleDark, user }:
     : '?'
   const displayName = user?.name ?? 'Guest'
   const displayDept = user?.department ?? ''
+
+  const [headerSearch, setHeaderSearch] = useState('')
+
+  const handleSearchSubmit = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && headerSearch.trim()) {
+      navigate(`/knowledge-base?q=${encodeURIComponent(headerSearch.trim())}`)
+    }
+  }
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-950 overflow-hidden">
@@ -98,6 +106,9 @@ export default function Layout({ children, onLogout, dark, onToggleDark, user }:
           <div className="flex-1 flex items-center gap-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 max-w-xs">
             <Search size={14} className="text-gray-400 flex-shrink-0" />
             <input
+              value={headerSearch}
+              onChange={e => setHeaderSearch(e.target.value)}
+              onKeyDown={handleSearchSubmit}
               placeholder="Search documents..."
               className="bg-transparent text-sm text-gray-700 dark:text-gray-300 outline-none w-full placeholder-gray-400"
             />

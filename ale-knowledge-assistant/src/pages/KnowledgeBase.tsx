@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Search, Trash2, FileText, RefreshCw, AlertCircle, Loader } from 'lucide-react'
 import clsx from 'clsx'
 import { useDocuments } from '../hooks/useDocuments'
@@ -23,9 +24,16 @@ const CAT_LABEL: Record<string, string> = {
 
 export default function KnowledgeBase() {
   const { documents, loading, error, refresh, remove } = useDocuments()
+  const [searchParams]          = useSearchParams()
   const [filter, setFilter]     = useState('All')
-  const [search, setSearch]     = useState('')
+  const [search, setSearch]     = useState(searchParams.get('q') || '')
   const [deleting, setDeleting] = useState<string | null>(null)
+
+  // Sync search box whenever the ?q= param changes (e.g. new search from header)
+  useEffect(() => {
+    const q = searchParams.get('q')
+    if (q !== null) setSearch(q)
+  }, [searchParams])
 
   const filtered = documents.filter(d => {
     const catLabel = CAT_LABEL[d.category] || d.category
