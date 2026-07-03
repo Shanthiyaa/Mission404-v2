@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { Bot, Send, Plus, FileText, AlertCircle, ExternalLink, Filter } from 'lucide-react'
 import clsx from 'clsx'
-import { queryDocuments, listDocuments } from '../api/client'
+import { useGlobalState } from '../context/GlobalState'
 import type { Message } from '../types'
-import type { Document } from '../api/client'
 
 // Dynamic suggestion generation based on recent user messages
 function generateDynamicSuggestions(messages: Message[], selectedDocs: string[]): string[] {
@@ -71,7 +70,6 @@ interface GroupedFileSourceCardProps {
   filename: string
   citations: any[]
 }
-
 function GroupedFileSourceCard({ filename, citations }: GroupedFileSourceCardProps) {
   return (
     <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-3">
@@ -89,20 +87,36 @@ function GroupedFileSourceCard({ filename, citations }: GroupedFileSourceCardPro
       {/* Findings list */}
       <div className="space-y-3">
         {citations.map((cite, ci) => {
-          const anchor = cite.pdf_anchor ?? ("#page=" + cite.page)
-          const pdfUrl = "/api/documents/" + encodeURIComponent(cite.source_file) + "/view" + anchor
+          const ext = cite.source_file.split('.').pop()?.toLowerCase()
+          let linkUrl = ''
+          if (ext === 'pdf') {
+            const anchor = cite.pdf_anchor ?? ("#page=" + cite.page)
+            linkUrl = "/api/documents/" + encodeURIComponent(cite.source_file) + "/view" + anchor
+          } else if (ext === 'pptx') {
+            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&anchor=slide-${cite.slide || cite.page}`
+          } else if (ext === 'docx') {
+            const slugify = (text: string) => {
+              return "heading-" + text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+            }
+            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&anchor=${slugify(cite.section)}`
+          } else if (ext === 'xlsx') {
+            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&anchor=sheet-${cite.worksheet || ''}`
+          } else {
+            linkUrl = `/api/documents/${encodeURIComponent(cite.source_file)}/view`
+          }
+
           return (
-            <div key={ci} className="text-xs border-b border-gray-50 dark:border-gray-850 last:border-b-0 pb-2 last:pb-0">
+            <div key={ci} className="text-xs border-b border-gray-50 dark:border-gray-855 last:border-b-0 pb-2 last:pb-0">
               <div className="flex items-center justify-between text-gray-400 dark:text-gray-500 font-medium mb-1">
                 <span>
-                  Page {cite.page} {cite.section ? `· Section: ${cite.section}` : ''}
+                  {ext === 'pptx' ? `Slide ${cite.slide || cite.page}` : ext === 'xlsx' ? `Worksheet: ${cite.worksheet || 'Sheet1'}` : `Page ${cite.page}`} {cite.section ? `· Section: ${cite.section}` : ''}
                 </span>
                 <a
-                  href={pdfUrl}
+                  href={linkUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-0.5 text-purple-500 hover:text-purple-700 transition-colors font-semibold"
-                  title={`Open ${cite.source_file} at page ${cite.page}`}
+                  title={`Open ${cite.source_file}`}
                 >
                   Go to source <ExternalLink size={10} />
                 </a>
@@ -319,101 +333,92 @@ function loadPersistedChat(): { conversations: ConversationEntry[]; activeId: nu
 }
 
 export default function Chat() {
-  const [conversations, setConversations] = useState<ConversationEntry[]>(
-    () => loadPersistedChat().conversations
-  )
-  const [activeId, setActiveId] = useState<number>(
-    () => loadPersistedChat().activeId
-  )
-  const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [sessionId] = useState(() => Math.random().toString(36).slice(2))
-  const bottomRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const {
+    conversations,
+    activeId,
+    activeQueries,
+    documents,
+    selectedDocs,
+    multiDoc,
+    showCitations,
+    newConversation,
+    setActiveId,
+    setSelectedDocs,
+    setConversations,
+    sendChatQuery
+  } = useGlobalState()
 
-  const [availableDocs, setAvailableDocs] = useState<Document[]>([])
-  const [selectedDocs, setSelectedDocs] = useState<string[]>([])
+  const [input, setInput] = useState('')
+  const [sessionId] = useState(() => Math.random().toString(36).slice(2))
+  const [docSelectionError, setDocSelectionError] = useState<string | null>(null)
+  
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const activeConv = conversations.find(c => c.id === activeId) ?? conversations[0]
   const messages = activeConv?.messages ?? INITIAL
+  const loading = !!activeQueries[activeId]
 
-  useEffect(() => {
-    listDocuments()
-      .then(docs => {
-        setAvailableDocs(docs.filter(d => d.status === 'Indexed'))
-      })
-      .catch(err => console.error('Failed to load documents', err))
-  }, [])
+  const availableDocs = documents.filter(d => d.status === 'Indexed')
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, loading])
-
-  // Persist conversations + activeId whenever they change (survives nav + refresh)
-  useEffect(() => {
-    try {
-      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify({ conversations, activeId }))
-    } catch (err) {
-      console.error('Failed to persist chat state', err)
+  const scrollToBottom = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
     }
-  }, [conversations, activeId])
-
-  const updateMessages = (id: number, updater: (msgs: Message[]) => Message[]) => {
-    setConversations(prev =>
-      prev.map(c => c.id === id ? { ...c, messages: updater(c.messages) } : c)
-    )
   }
+
+  // ChatGPT-style scrolling: auto-scroll only if already at the bottom or loading starts
+  const prevLoadingRef = useRef(loading)
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const isAtBottom = container.scrollHeight - container.clientHeight - container.scrollTop < 120
+
+    if (loading && !prevLoadingRef.current) {
+      scrollToBottom()
+    } else if (!loading && prevLoadingRef.current) {
+      if (isAtBottom) {
+        scrollToBottom()
+      }
+    } else {
+      if (isAtBottom) {
+        scrollToBottom()
+      }
+    }
+    prevLoadingRef.current = loading
+  }, [messages, loading])
 
   const send = async (text: string) => {
     if (!text.trim() || loading) return
     const q = text.trim()
-    setInput('')
 
-    updateMessages(activeId, msgs => [...msgs, { role: 'user', content: q }])
-    setLoading(true)
-
-    if (activeConv.title === 'New conversation') {
+    // REQUIRE DOCUMENT SELECTION VALIDATION
+    if (selectedDocs.length === 0) {
       setConversations(prev =>
-        prev.map(c => c.id === activeId
-          ? { ...c, title: q.length > 40 ? q.slice(0, 40) + '…' : q }
-          : c
+        prev.map(c =>
+          c.id === activeId
+            ? {
+                ...c,
+                messages: [
+                  ...c.messages,
+                  { role: 'user', content: q },
+                  {
+                    role: 'assistant',
+                    content: "Please select at least one document before asking a question.",
+                    error: true
+                  }
+                ]
+              }
+            : c
         )
       )
+      setInput('')
+      return
     }
 
-    try {
-      const res = await queryDocuments(q, sessionId, undefined, selectedDocs)
-      updateMessages(activeId, msgs => [
-        ...msgs,
-        {
-          role: 'assistant',
-          content: res.answer,
-          citations: res.citations,
-          confidence: res.confidence,
-        },
-      ])
-    } catch (e: any) {
-      updateMessages(activeId, msgs => [
-        ...msgs,
-        {
-          role: 'assistant',
-          content: e.message?.includes('No documents')
-            ? 'No documents have been indexed yet. Please upload a PDF first.'
-            : e.message?.includes('LLM unavailable')
-              ? 'The Ollama LLM is not reachable. Make sure Ollama is running: `ollama serve`'
-              : 'Something went wrong: ' + e.message,
-          error: true,
-        },
-      ])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const newConversation = () => {
-    const id = Date.now()
-    setConversations(prev => [...prev, { id, title: 'New conversation', messages: INITIAL }])
-    setActiveId(id)
+    setInput('')
+    await sendChatQuery(q, sessionId)
   }
 
   return (
@@ -465,7 +470,7 @@ export default function Chat() {
               </div>
               {selectedDocs.length > 0 && (
                 <button
-                  onClick={() => setSelectedDocs([])}
+                  onClick={() => { setSelectedDocs([]); setDocSelectionError(null); }}
                   className="text-[10px] text-purple-600 hover:text-purple-700 font-medium"
                 >
                   Clear Filter
@@ -489,10 +494,15 @@ export default function Chat() {
                         type="checkbox"
                         checked={isChecked}
                         onChange={() => {
+                          if (!multiDoc && !isChecked && selectedDocs.length >= 1) {
+                            setDocSelectionError("Multi-document search is disabled in settings. You may select only one document.")
+                            return
+                          }
+                          setDocSelectionError(null)
                           setSelectedDocs(prev =>
                             isChecked
                               ? prev.filter(name => name !== doc.name)
-                              : [...prev, doc.name]
+                              : (multiDoc ? [...prev, doc.name] : [doc.name])
                           )
                         }}
                         className="mt-0.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
@@ -505,7 +515,12 @@ export default function Chat() {
                 })}
               </div>
             )}
-            {selectedDocs.length > 0 && (
+            {docSelectionError && (
+              <div className="text-[10px] text-red-500 font-medium mt-1">
+                {docSelectionError}
+              </div>
+            )}
+            {selectedDocs.length > 0 && !docSelectionError && (
               <div className="text-[10px] text-purple-600 dark:text-purple-400 font-medium mt-1.5 pt-1.5 border-t border-gray-100 dark:border-gray-800/40">
                 Searching {selectedDocs.length} selected document{selectedDocs.length > 1 ? 's' : ''}
               </div>
@@ -529,7 +544,7 @@ export default function Chat() {
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
             {messages.map((m, i) => (
               <div key={i} className={clsx('flex gap-2.5 items-start', m.role === 'user' && 'flex-row-reverse')}>
                 <div className={clsx(
@@ -562,7 +577,7 @@ export default function Chat() {
                   )}
 
                   {/* Citations */}
-                  {m.citations && m.citations.length > 0 && (() => {
+                  {showCitations && m.citations && m.citations.length > 0 && (() => {
                     // Group citations by source_file
                     const groups: { [filename: string]: any[] } = {}
                     m.citations.forEach(c => {
@@ -607,7 +622,6 @@ export default function Chat() {
                 </div>
               </div>
             )}
-            <div ref={bottomRef} />
           </div>
 
           {/* Input area */}

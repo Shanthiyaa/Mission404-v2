@@ -28,9 +28,9 @@ export function useDocuments(autoRefresh = false) {
     loadDocuments()
     if (!autoRefresh) return
     // Poll every 4s when autoRefresh is on (during active uploads)
-    const id = setInterval(fetch, 4000)
+    const id = setInterval(loadDocuments, 4000)
     return () => clearInterval(id)
-  }, [fetch, autoRefresh])
+  }, [loadDocuments, autoRefresh])
 
   const remove = useCallback(async (docId: string) => {
     await deleteDocument(docId)

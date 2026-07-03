@@ -1,26 +1,19 @@
-import { Link } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { Files, MessageSquare, BarChart3, Users, TrendingUp, FileText, RefreshCw, AlertCircle, Loader } from 'lucide-react'
-import { getStats, getActivity } from '../api/client'
-import { useDocuments } from '../hooks/useDocuments'
-import type { Stats, ActivityItem } from '../types'
+import { Files, MessageSquare, Users, TrendingUp, RefreshCw, AlertCircle } from 'lucide-react'
+import { getStats } from '../api/client'
+import type { Stats } from '../types'
 
 export default function Dashboard() {
   const [stats, setStats]       = useState<Stats | null>(null)
-  const [activity, setActivity] = useState<ActivityItem[]>([])
   const [statsErr, setStatsErr] = useState<string | null>(null)
   const [loadingStats, setLoadingStats] = useState(true)
-
-  const { documents, loading: docsLoading } = useDocuments()
-  const recentDocs = documents.slice(0, 3)
 
   const fetchAll = async () => {
     setLoadingStats(true)
     setStatsErr(null)
     try {
-      const [s, a] = await Promise.all([getStats(), getActivity()])
+      const s = await getStats()
       setStats(s)
-      setActivity(a)
     } catch (e: any) {
       setStatsErr(e.message || 'Failed to load stats')
     } finally {
@@ -64,7 +57,7 @@ export default function Dashboard() {
     <div>
       <div className="mb-5 flex items-start justify-between">
         <div>
-          <a href="/knowledge-base" className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
+          <a href="/knowledge-base" className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-semibold">
             View all
           </a>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Here's what's happening with your knowledge base today.</p>
@@ -113,92 +106,6 @@ export default function Dashboard() {
                 </div>
               </div>
             ))}
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        {/* ── Recent activity ── */}
-        <div className="card">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-medium text-gray-900 dark:text-white">Recent activity</h2>
-          </div>
-
-          {loadingStats && activity.length === 0 ? (
-            <div className="space-y-3">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="flex gap-3 animate-pulse py-1">
-                  <div className="w-2 h-2 rounded-full bg-gray-100 dark:bg-gray-700 mt-1.5 flex-shrink-0" />
-                  <div className="flex-1 h-3 bg-gray-100 dark:bg-gray-700 rounded" />
-                  <div className="w-10 h-3 bg-gray-100 dark:bg-gray-700 rounded" />
-                </div>
-              ))}
-            </div>
-          ) : activity.length === 0 ? (
-            <p className="text-xs text-gray-400 py-4 text-center">No activity yet. Upload a document or ask a question.</p>
-          ) : (
-            <div className="space-y-0">
-              {activity.map((a, i) => (
-                <div key={i} className="flex items-start gap-3 py-2.5 border-b border-gray-50 dark:border-gray-700 last:border-0">
-                  <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${a.color}`} />
-                  <div className="flex-1 text-xs text-gray-700 dark:text-gray-300">{a.text}</div>
-                  <div className="text-xs text-gray-400 flex-shrink-0">{a.time}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* ── Recent documents ── */}
-        <div className="card">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-medium text-gray-900 dark:text-white">Recent documents</h2>
-            <Link to="/knowledge-base" className="text-xs text-purple-600 hover:underline">View all</Link>
-
-          </div>
-
-          {docsLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="flex items-center gap-3 p-2.5 bg-gray-50 dark:bg-gray-800 rounded-lg animate-pulse">
-                  <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded-lg flex-shrink-0" />
-                  <div className="flex-1">
-                    <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-1" />
-                    <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded w-1/2" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : recentDocs.length === 0 ? (
-            <div className="py-6 text-center">
-              <FileText size={24} className="text-gray-200 dark:text-gray-700 mx-auto mb-2" />
-              <p className="text-xs text-gray-400">No documents yet. Upload a PDF to get started.</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {recentDocs.map(d => (
-                <div key={d.id} className="flex items-center gap-3 p-2.5 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                  <div className="w-8 h-8 bg-purple-50 dark:bg-purple-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
-                    {d.status === 'Processing'
-                      ? <Loader size={14} className="text-purple-400 animate-spin" />
-                      : <FileText size={15} className="text-purple-600" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium text-gray-900 dark:text-white truncate">{d.name}</div>
-                    <div className="text-xs text-gray-400">{d.size} · {d.pages} pages · {d.date}</div>
-                  </div>
-                  <span className={`badge ${
-                    d.status === 'Indexed'
-                      ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                      : d.status === 'Failed'
-                      ? 'bg-red-50 text-red-600'
-                      : 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-                  }`}>
-                    {d.status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     </div>
   )

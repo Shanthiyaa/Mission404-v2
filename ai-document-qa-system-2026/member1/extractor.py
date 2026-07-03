@@ -426,33 +426,40 @@ def extract_xlsx(filepath: str) -> dict:
     doc_type = detect_doc_type(filename)
     log.info(f"Extracting XLSX: {filename}")
     
-    wb = openpyxl.load_workbook(str(p), data_only=True)
+    wb = openpyxl.load_workbook(str(p), data_only=True, read_only=True)
     page_segments = []
     tables = []
     
     for sheet_name in wb.sheetnames:
         sheet = wb[sheet_name]
-        rows = list(sheet.iter_rows(values_only=True))
-        if not rows:
-            continue
-            
+        
         markdown_rows = []
-        for r in rows:
+        consecutive_empty = 0
+        max_cols = 0
+        
+        for r in sheet.iter_rows(values_only=True):
             if all(val is None or str(val).strip() == "" for val in r):
+                consecutive_empty += 1
+                if consecutive_empty > 20:
+                    break
                 continue
+            consecutive_empty = 0
+            
+            # Find the last non-empty column index in this row to prune empty columns
+            row_len = len(r)
+            row_max_col = 0
+            for idx in range(row_len - 1, -1, -1):
+                if r[idx] is not None and str(r[idx]).strip() != "":
+                    row_max_col = idx + 1
+                    break
+            max_cols = max(max_cols, row_max_col)
+            
             row_vals = ["" if val is None else str(val).replace("\n", " ").strip() for val in r]
             markdown_rows.append(row_vals)
             
         if not markdown_rows:
             continue
             
-        max_cols = 0
-        for row in markdown_rows:
-            for idx in range(len(row) - 1, -1, -1):
-                if row[idx] != "":
-                    max_cols = max(max_cols, idx + 1)
-                    break
-                    
         cropped_rows = [row[:max_cols] for row in markdown_rows]
         if not cropped_rows or not cropped_rows[0]:
             continue
@@ -838,6 +845,254 @@ def process_documents(file_paths: list[str]) -> list[Document]:
     save_chunks_json(documents)
 
     return documents
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  HTML PREVIEW GENERATORS FOR IN-BROWSER VIEWING
+# ══════════════════════════════════════════════════════════════════════════════
+
+def docx_to_html(filepath: Path) -> str:
+    from docx import Document as DocxDocument
+    from docx.document import Document as _DocxDocType
+    from docx.table import Table as _DocxTable, _Cell
+    from docx.text.paragraph import Paragraph as _DocxParagraph
+    from docx.oxml.text.paragraph import CT_P
+    from docx.oxml.table import CT_Tbl
+
+    doc = DocxDocument(str(filepath))
+
+    def iter_block_items(parent):
+        if isinstance(parent, _DocxDocType):
+            parent_elm = parent.element.body
+        elif isinstance(parent, _Cell):
+            parent_elm = parent._tc
+        else:
+            raise TypeError("Unsupported parent type")
+        for child in parent_elm.iterchildren():
+            if isinstance(child, CT_P):
+                yield _DocxParagraph(child, parent)
+            elif isinstance(child, CT_Tbl):
+                yield _DocxTable(child, parent)
+
+    html_parts = []
+    
+    html_parts.append("""
+    <style>
+        .preview-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1f2937; line-height: 1.6; max-width: 900px; margin: 0 auto; }
+        .preview-body h1, .preview-body h2, .preview-body h3, .preview-body h4 { color: #111827; font-weight: 600; margin-top: 1.5em; margin-bottom: 0.5em; }
+        .preview-body h1 { border-bottom: 1px solid #e5e7eb; padding-bottom: 0.3em; font-size: 1.8em; }
+        .preview-body h2 { font-size: 1.4em; }
+        .preview-body h3 { font-size: 1.2em; }
+        .preview-body p { margin-top: 0; margin-bottom: 1em; }
+        .preview-body ul, .preview-body ol { margin-top: 0; margin-bottom: 1em; padding-left: 2em; }
+        .preview-body li { margin-bottom: 0.25em; }
+        .preview-body table { border-collapse: collapse; width: 100%; margin: 1.5em 0; font-size: 0.9em; }
+        .preview-body th, .preview-body td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+        .preview-body th { background-color: #f9fafb; font-weight: 600; }
+        .preview-body .highlight-section { background-color: #f3e8ff; border-left: 4px solid #9333ea; padding: 8px; margin: 10px 0; border-radius: 0 4px 4px 0; animation: pulse-highlight 2s ease-in-out; }
+        @keyframes pulse-highlight {
+            0% { background-color: #f3e8ff; }
+            50% { background-color: #e9d5ff; }
+            100% { background-color: #f3e8ff; }
+        }
+    </style>
+    <div class="preview-body">
+    """)
+
+    def slugify(text: str) -> str:
+        import re
+        return "heading-" + re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')
+
+    in_list = False
+    list_type = None
+
+    for item in iter_block_items(doc):
+        if isinstance(item, _DocxParagraph):
+            text = item.text.strip()
+            if not text:
+                continue
+            
+            style_name = item.style.name.lower() if item.style else ""
+            is_bullet = "bullet" in style_name
+            is_number = "number" in style_name
+            
+            if is_bullet or is_number:
+                current_type = "ul" if is_bullet else "ol"
+                if not in_list:
+                    html_parts.append(f"<{current_type}>")
+                    in_list = True
+                    list_type = current_type
+                elif list_type != current_type:
+                    html_parts.append(f"</{list_type}>")
+                    html_parts.append(f"<{current_type}>")
+                    list_type = current_type
+                html_parts.append(f"<li>{text}</li>")
+            else:
+                if in_list:
+                    html_parts.append(f"</{list_type}>")
+                    in_list = False
+                    list_type = None
+                
+                if item.style and style_name.startswith("heading"):
+                    level = 1
+                    try:
+                        level_match = re.search(r'\d', style_name)
+                        if level_match:
+                            level = int(level_match.group())
+                    except:
+                        pass
+                    h_tag = f"h{min(max(level, 1), 6)}"
+                    heading_id = slugify(text)
+                    html_parts.append(f"<{h_tag} id=\"{heading_id}\">{text}</{h_tag}>")
+                else:
+                    html_parts.append(f"<p>{text}</p>")
+                    
+        elif isinstance(item, _DocxTable):
+            if in_list:
+                html_parts.append(f"</{list_type}>")
+                in_list = False
+                list_type = None
+                
+            html_parts.append("<table>")
+            for r_idx, row in enumerate(item.rows):
+                html_parts.append("<tr>")
+                for cell in row.cells:
+                    cell_tag = "th" if r_idx == 0 else "td"
+                    html_parts.append(f"<{cell_tag}>{cell.text.strip()}</{cell_tag}>")
+                html_parts.append("</tr>")
+            html_parts.append("</table>")
+            
+    if in_list:
+        html_parts.append(f"</{list_type}>")
+
+    html_parts.append("</div>")
+    return "\n".join(html_parts)
+
+
+def pptx_to_html(filepath: Path) -> str:
+    from pptx import Presentation
+    prs = Presentation(str(filepath))
+    
+    html_parts = []
+    html_parts.append("""
+    <style>
+        .preview-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1f2937; line-height: 1.6; max-width: 900px; margin: 0 auto; padding-bottom: 50px; }
+        .slide { background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); margin-bottom: 30px; padding: 40px; aspect-ratio: 16/9; position: relative; display: flex; flex-direction: column; justify-content: flex-start; box-sizing: border-box; }
+        .slide-header { border-bottom: 2px solid #9333ea; color: #111827; font-size: 1.6em; font-weight: 600; margin-bottom: 20px; padding-bottom: 10px; }
+        .slide-content { flex: 1; font-size: 1.1em; color: #374151; overflow-y: auto; }
+        .slide-notes { background-color: #fdf4ff; border-left: 4px solid #d8b4fe; border-radius: 0 4px 4px 0; font-size: 0.9em; font-style: italic; margin-top: 15px; padding: 8px 12px; color: #581c87; }
+        .slide-number { position: absolute; bottom: 15px; right: 20px; font-size: 0.8em; color: #9ca3af; font-weight: 500; }
+        .highlight-section { border: 3px solid #a855f7; box-shadow: 0 0 15px rgba(168, 85, 247, 0.4); animation: slide-border-pulse 2s infinite; }
+        @keyframes slide-border-pulse {
+            0% { box-shadow: 0 0 15px rgba(168, 85, 247, 0.4); }
+            50% { box-shadow: 0 0 25px rgba(168, 85, 247, 0.7); }
+            100% { box-shadow: 0 0 15px rgba(168, 85, 247, 0.4); }
+        }
+    </style>
+    <div class="preview-body">
+    """)
+    
+    for slide_idx, slide in enumerate(prs.slides, start=1):
+        slide_title = f"Slide {slide_idx}"
+        slide_texts = []
+        
+        title_shape = None
+        if slide.shapes.title:
+            title_shape = slide.shapes.title
+            title_text = title_shape.text.strip()
+            if title_text:
+                slide_title = title_text
+                
+        for shape in slide.shapes:
+            if shape == title_shape:
+                continue
+            if hasattr(shape, "text") and shape.text.strip():
+                slide_texts.append(shape.text.strip())
+                
+        notes_text = ""
+        notes_slide = slide.notes_slide
+        if notes_slide and notes_slide.notes_text_frame:
+            notes_text = notes_slide.notes_text_frame.text.strip()
+            
+        html_parts.append(f'<div class="slide" id="slide-{slide_idx}">')
+        html_parts.append(f'  <div class="slide-header">{slide_title}</div>')
+        html_parts.append('  <div class="slide-content">')
+        for txt in slide_texts:
+            html_parts.append(f'    <p>{txt}</p>')
+        html_parts.append('  </div>')
+        if notes_text:
+            html_parts.append(f'  <div class="slide-notes"><strong>Speaker Notes:</strong> {notes_text}</div>')
+        html_parts.append(f'  <div class="slide-number">Slide {slide_idx} of {len(prs.slides)}</div>')
+        html_parts.append('</div>')
+        
+    html_parts.append("</div>")
+    return "\n".join(html_parts)
+
+
+def xlsx_to_html(filepath: Path) -> str:
+    import openpyxl
+    wb = openpyxl.load_workbook(str(filepath), data_only=True, read_only=True)
+    
+    html_parts = []
+    html_parts.append("""
+    <style>
+        .preview-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1f2937; padding: 10px; }
+        .tabs { display: flex; border-bottom: 2px solid #e5e7eb; margin-bottom: 20px; flex-wrap: wrap; }
+        .tab-btn { padding: 8px 16px; font-weight: 500; cursor: pointer; border: none; background: none; border-bottom: 2px solid transparent; color: #6b7280; font-size: 0.9em; }
+        .tab-btn.active { border-bottom-color: #9333ea; color: #9333ea; font-weight: 600; }
+        .sheet-container { display: none; overflow-x: auto; }
+        .sheet-container.active { display: block; }
+        table { border-collapse: collapse; width: 100%; margin: 15px 0; font-size: 0.85em; }
+        th, td { border: 1px solid #e5e7eb; padding: 6px 10px; text-align: left; min-width: 80px; }
+        th { background-color: #f9fafb; font-weight: 600; }
+    </style>
+    <div class="preview-body">
+    """)
+    
+    html_parts.append('<div class="tabs">')
+    for sheet_idx, sheet_name in enumerate(wb.sheetnames):
+        active_class = "active" if sheet_idx == 0 else ""
+        html_parts.append(f'<button class="tab-btn {active_class}" onclick="showSheet(\'{sheet_name}\', event)">{sheet_name}</button>')
+    html_parts.append('</div>')
+    
+    for sheet_idx, sheet_name in enumerate(wb.sheetnames):
+        active_class = "active" if sheet_idx == 0 else ""
+        html_parts.append(f'<div class="sheet-container {active_class}" id="sheet-{sheet_name}">')
+        html_parts.append('  <table>')
+        
+        sheet = wb[sheet_name]
+        consecutive_empty = 0
+        for r_idx, row in enumerate(sheet.iter_rows(values_only=True)):
+            if all(val is None or str(val).strip() == "" for val in row):
+                consecutive_empty += 1
+                if consecutive_empty > 20:
+                    break
+                continue
+            consecutive_empty = 0
+            
+            html_parts.append('    <tr>')
+            for val in row:
+                cell_tag = "th" if r_idx == 0 else "td"
+                val_str = "" if val is None else str(val).strip()
+                html_parts.append(f'      <{cell_tag}>{val_str}</{cell_tag}>')
+            html_parts.append('    </tr>')
+            
+        html_parts.append('  </table>')
+        html_parts.append('</div>')
+        
+    html_parts.append("""
+    </div>
+    <script>
+        function showSheet(name, event) {
+            document.querySelectorAll('.sheet-container').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById('sheet-' + name).classList.add('active');
+            event.target.classList.add('active');
+        }
+    </script>
+    """)
+    wb.close()
+    return "\n".join(html_parts)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { CloudUpload, FileText, Check, Loader, Clock, AlertCircle, X, ChevronDown } from 'lucide-react'
 import clsx from 'clsx'
-import { uploadDocument, getUploadStatus } from '../api/client'
+import { useGlobalState } from '../context/GlobalState'
 import type { UploadFile } from '../types'
 
 const CATEGORIES = ['User guide', 'Release notes', 'SQA test cases', 'KCS article']
@@ -24,86 +24,22 @@ const FILE_TYPE_EXT_MAP: Record<string, string> = {
 }
 
 export default function Upload() {
+  const { files, startUpload, removeUploadFile } = useGlobalState()
   const [fileType, setFileType] = useState('PDF')
   const [cat, setCat]           = useState('User guide')
   const [dragging, setDragging] = useState(false)
-  const [files, setFiles]       = useState<UploadFile[]>([])
   const inputRef                = useRef<HTMLInputElement>(null)
-
-  // ── Poll status for in-progress uploads ──────────────────────────────────
-  useEffect(() => {
-    const processing = files.filter(f => f.status === 'processing' && f.taskId)
-    if (!processing.length) return
-
-    const id = setInterval(async () => {
-      for (const uf of processing) {
-        if (!uf.taskId) continue
-        try {
-          const status = await getUploadStatus(uf.taskId)
-          setFiles(prev => prev.map(f =>
-            f.taskId === uf.taskId
-              ? {
-                  ...f,
-                  stage:    status.stage,
-                  progress: status.progress,
-                  chunks:   status.chunks,
-                  status:   status.done
-                    ? (status.error ? 'error' : 'done')
-                    : 'processing',
-                  error: status.error,
-                }
-              : f
-          ))
-        } catch {}
-      }
-    }, 1500)
-
-    return () => clearInterval(id)
-  }, [files])
 
   // ── Handle file selection ─────────────────────────────────────────────────
   const handleFiles = async (selected: FileList | null) => {
     if (!selected) return
     const expectedExt = FILE_TYPE_EXT_MAP[fileType]
-
-    const newEntries: UploadFile[] = Array.from(selected).map(file => {
-      const name = file.name.toLowerCase()
-      const isValid = name.endsWith(expectedExt)
-      return {
-        file,
-        taskId:   null,
-        stage:    isValid ? 'Uploading…' : 'Validation failed',
-        progress: 0,
-        status:   isValid ? 'uploading' as const : 'error' as const,
-        error:    isValid ? null : `Selected file type is ${fileType.split(' ')[0]}. Please upload only ${expectedExt} files.`,
-        chunks:   0,
-      }
-    })
-
-    setFiles(prev => [...prev, ...newEntries])
-
-    // Upload each valid file
-    for (const entry of newEntries) {
-      if (entry.status === 'error') continue
-      try {
-        const res = await uploadDocument(entry.file, CATEGORY_API_MAP[cat] || 'unknown')
-        setFiles(prev => prev.map(f =>
-          f.file === entry.file
-            ? { ...f, taskId: res.task_id, stage: 'Queued…', progress: 5, status: 'processing' }
-            : f
-        ))
-      } catch (e: any) {
-        setFiles(prev => prev.map(f =>
-          f.file === entry.file
-            ? { ...f, status: 'error', error: e.message, stage: 'Upload failed' }
-            : f
-        ))
-      }
-    }
+    const catApiValue = CATEGORY_API_MAP[cat] || 'unknown'
+    await startUpload(selected, fileType, cat, expectedExt, catApiValue)
   }
 
   const removeFile = (index: number) => {
-    setFiles(prev => prev.filter((_, i) => i !== index))
+    removeUploadFile(index)
   }
 
 

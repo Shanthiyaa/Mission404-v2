@@ -8,6 +8,9 @@ import Chat from './pages/Chat'
 import Upload from './pages/Upload'
 import KnowledgeBase from './pages/KnowledgeBase'
 import Settings from './pages/Settings'
+import Notification from './pages/Notification'
+import DocPreview from './pages/DocPreview'
+import { GlobalStateProvider } from './context/GlobalState'
 
 interface UserInfo {
   name: string
@@ -78,19 +81,27 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <div className={dark ? 'dark' : ''}>
-        <Layout onLogout={handleLogout} dark={dark} onToggleDark={toggleDark} user={user}>
+      <GlobalStateProvider>
+        <div className={dark ? 'dark' : ''}>
           <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/chat" element={<Chat />} />
-            <Route path="/upload" element={<Upload />} />
-            <Route path="/knowledge-base" element={<KnowledgeBase />} />
-            <Route path="/settings" element={<Settings dark={dark} onToggleDark={toggleDark} user={user} />} />
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/preview" element={<DocPreview />} />
+            <Route path="*" element={
+              <Layout onLogout={handleLogout} dark={dark} onToggleDark={toggleDark} user={user}>
+                <Routes>
+                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/chat" element={<Chat />} />
+                  <Route path="/upload" element={<Upload />} />
+                  <Route path="/knowledge-base" element={<KnowledgeBase />} />
+                  <Route path="/settings" element={<Settings dark={dark} onToggleDark={toggleDark} user={user} />} />
+                  <Route path="/notifications" element={<Notification />} />
+                  <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                </Routes>
+              </Layout>
+            } />
           </Routes>
-        </Layout>
-      </div>
+        </div>
+      </GlobalStateProvider>
     </BrowserRouter>
   )
 }

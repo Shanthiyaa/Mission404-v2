@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Search, Trash2, FileText, RefreshCw, AlertCircle, Loader } from 'lucide-react'
 import clsx from 'clsx'
-import { useDocuments } from '../hooks/useDocuments'
+import { useGlobalState } from '../context/GlobalState'
 
 const FILTERS = ['All', 'User guide', 'Release notes', 'SQA', 'KCS']
 
@@ -23,7 +23,7 @@ const CAT_LABEL: Record<string, string> = {
 }
 
 export default function KnowledgeBase() {
-  const { documents, loading, error, refresh, remove } = useDocuments()
+  const { documents, docsLoading: loading, docsError: error, refreshDocuments: refresh, deleteDoc: remove } = useGlobalState()
   const [searchParams]          = useSearchParams()
   const [filter, setFilter]     = useState('All')
   const [search, setSearch]     = useState(searchParams.get('q') || '')

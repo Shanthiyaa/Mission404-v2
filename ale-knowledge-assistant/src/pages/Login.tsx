@@ -243,32 +243,7 @@ export default function Login({ onLogin }: LoginProps) {
           </div>
         </div>
 
-        {/* Bottom: Testimonial */}
-        <div className="relative z-10" style={{
-          background: 'rgba(255,255,255,0.06)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: '14px', padding: '16px 20px',
-          backdropFilter: 'blur(8px)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{
-              width: '36px', height: '36px', borderRadius: '50%',
-              background: 'linear-gradient(135deg, #7c3aed, #a855f7)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0, color: 'white', fontWeight: 700, fontSize: '13px',
-            }}>
-              TK
-            </div>
-            <div>
-              <div style={{ color: 'rgba(255,255,255,0.9)', fontSize: '13px', lineHeight: 1.5 }}>
-                "Found the answer to a 3-hour search in 8 seconds. The citation was on the exact page."
-              </div>
-              <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', marginTop: '3px' }}>
-                Thirumalaikumar · Network Engineering Intern
-              </div>
-            </div>
-          </div>
-        </div>
+
       </div>
 
       {/* ── RIGHT: Auth Card ──────────────────────────────────── */}

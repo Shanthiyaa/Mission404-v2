@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import clsx from 'clsx'
+import { useGlobalState } from '../context/GlobalState'
 
 interface SettingsProps {
   dark: boolean
@@ -9,9 +10,6 @@ interface SettingsProps {
 
 const MODELS = [
   { name: 'Llama 3.2', desc: 'Fast · local · 2B' },
-  { name: 'Llama 3', desc: 'Accurate · local · 8B' },
-  { name: 'Mistral 7B', desc: 'Balanced · local' },
-  { name: 'Custom', desc: 'Your fine-tuned model' },
 ]
 
 function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
@@ -38,10 +36,9 @@ function SettingRow({ label, sub, right }: { label: string; sub: string; right: 
 }
 
 export default function Settings({ dark, onToggleDark, user }: SettingsProps) {
+  const { multiDoc, setMultiDoc, showCitations, setShowCitations } = useGlobalState()
   const [compact, setCompact] = useState(true)
   const [showConf, setShowConf] = useState(true)
-  const [multiDoc, setMultiDoc] = useState(true)
-  const [citations, setCitations] = useState(true)
   const [model, setModel] = useState('Llama 3.2')
   const [k, setK] = useState('3')
 
@@ -110,8 +107,8 @@ export default function Settings({ dark, onToggleDark, user }: SettingsProps) {
                 </select>
               }
             />
-            <SettingRow label="Multi-document search" sub="Search across all indexed files" right={<Toggle on={multiDoc} onToggle={() => setMultiDoc(c => !c)} />} />
-            <SettingRow label="Show source citations" sub="Always display source references" right={<Toggle on={citations} onToggle={() => setCitations(c => !c)} />} />
+            <SettingRow label="Multi-document search" sub="Search across all indexed files" right={<Toggle on={multiDoc} onToggle={() => setMultiDoc(!multiDoc)} />} />
+            <SettingRow label="Show source citations" sub="Always display source references" right={<Toggle on={showCitations} onToggle={() => setShowCitations(!showCitations)} />} />
           </div>
         </div>
       </div>

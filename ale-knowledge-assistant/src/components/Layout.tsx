@@ -119,7 +119,10 @@ export default function Layout({ children, onLogout, dark, onToggleDark, user }:
           >
             {dark ? <Sun size={15} /> : <Moon size={15} />}
           </button>
-          <button className="w-8 h-8 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 relative">
+          <button
+            onClick={() => navigate('/notifications')}
+            className="w-8 h-8 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 relative"
+          >
             <Bell size={15} />
             <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-purple-500 rounded-full" />
           </button>

@@ -31,7 +31,7 @@ from contextlib import asynccontextmanager
 # ── FastAPI ───────────────────────────────────────────────────────────────────
 from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from pydantic import BaseModel
 
 # ── Shared config ─────────────────────────────────────────────────────────────
@@ -296,16 +296,21 @@ def _run_pipeline(task_id: str, file_path: str, doc_entries: list[dict], is_zip:
 
             existing_chunks: list[dict] = []
             meta_file = FAISS_PATH / "metadata.json"
-            if meta_file.exists():
+            has_overlap = False
+            index_exists = meta_file.exists() and (FAISS_PATH / "index.faiss").exists()
+
+            if index_exists:
                 try:
                     with open(meta_file, encoding="utf-8") as f:
                         existing_chunks = json.load(f)
                     
                     sub_filenames = [entry["name"] for entry in doc_entries]
+                    len_before = len(existing_chunks)
                     existing_chunks = [
                         c for c in existing_chunks
                         if c.get("source_file") not in sub_filenames
                     ]
+                    has_overlap = len(existing_chunks) < len_before
                     log.info(
                         f"[{task_id}] Merging {len(new_chunks)} new chunks "
                         f"with {len(existing_chunks)} existing chunks."
@@ -313,9 +318,15 @@ def _run_pipeline(task_id: str, file_path: str, doc_entries: list[dict], is_zip:
                 except Exception as e:
                     log.warning(f"[{task_id}] Could not read existing metadata: {e}. Starting fresh.")
                     existing_chunks = []
+                    index_exists = False
 
-            merged_chunks = existing_chunks + new_chunks
-            build_and_persist_faiss_index(merged_chunks)
+            if index_exists and not has_overlap:
+                from member2.vector_store import add_to_faiss_index
+                add_to_faiss_index(new_chunks)
+                merged_chunks = existing_chunks + new_chunks
+            else:
+                merged_chunks = existing_chunks + new_chunks
+                build_and_persist_faiss_index(merged_chunks)
 
         t.update({"stage": "Indexing to FAISS…", "progress": 85})
         log.info(f"[{task_id}] FAISS index built with {len(merged_chunks)} total chunks.")
@@ -822,6 +833,37 @@ async def health():
         "ollama_url":  OLLAMA_BASE_URL,
         "model":       OLLAMA_MODEL,
     }
+
+
+@app.get("/api/documents/{filename}/view-html")
+async def view_document_html(filename: str):
+    file_path = UPLOAD_PATH / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"File '{filename}' not found.")
+    
+    ext = file_path.suffix.lower()
+    try:
+        if ext == ".docx":
+            from member1.extractor import docx_to_html
+            html_content = docx_to_html(file_path)
+        elif ext == ".pptx":
+            from member1.extractor import pptx_to_html
+            html_content = pptx_to_html(file_path)
+        elif ext == ".xlsx":
+            from member1.extractor import xlsx_to_html
+            html_content = xlsx_to_html(file_path)
+        elif ext in (".txt", ".log"):
+            content = file_path.read_text(encoding="utf-8", errors="replace")
+            import html
+            content_escaped = html.escape(content)
+            html_content = f"<pre style='font-family: monospace; white-space: pre-wrap; padding: 20px; max-width: 900px; margin: 0 auto;'>{content_escaped}</pre>"
+        else:
+            raise HTTPException(status_code=400, detail="HTML preview not supported for this file type.")
+        
+        return HTMLResponse(content=html_content, status_code=200)
+    except Exception as e:
+        log.error(f"Failed to generate HTML preview for {filename}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Preview generation failed: {e}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
