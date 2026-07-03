@@ -9,7 +9,7 @@ CHUNKS_JSON_PATH = "./data/chunks.json"     # Member1 → Member2 handoff
 FAISS_INDEX_DIR  = "./data/faiss_index"     # Member2 saves, Member3 + API loads
 
 # ── Docling / Extraction ──────────────────────────────────────────────────────
-SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".html", ".htm"}
+SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".xlsx", ".txt", ".zip"}
 
 DOC_TYPE_MAP = {
     "user_guide":   ["user_guide", "userguide", "manual", "handbook"],

@@ -161,6 +161,29 @@ def _get_pdf_page_count(filepath: Path) -> int:
         return 1
 
 
+def _get_page_count(filepath: Path) -> int:
+    ext = filepath.suffix.lower()
+    if ext == ".pdf":
+        return _get_pdf_page_count(filepath)
+    elif ext == ".pptx":
+        try:
+            from pptx import Presentation
+            prs = Presentation(str(filepath))
+            return len(prs.slides)
+        except Exception:
+            return 1
+    elif ext == ".xlsx":
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(str(filepath), read_only=True)
+            count = len(wb.sheetnames)
+            wb.close()
+            return count
+        except Exception:
+            return 1
+    return 1
+
+
 def _human_size(bytes_: int) -> str:
     for unit in ["B", "KB", "MB", "GB"]:
         if bytes_ < 1024:
@@ -204,6 +227,7 @@ def _get_unique_filename(target_path: Path) -> Path:
 def _run_pipeline(task_id: str, file_path: str, doc_entries: list[dict], is_zip: bool = False) -> None:
     t = _tasks[task_id]
     filename = Path(file_path).name
+    SUPPORTED_EXTENSIONS_IN_ZIP = {".pdf", ".docx", ".pptx", ".xlsx", ".txt"}
 
     try:
         extracted_paths = []
@@ -213,35 +237,35 @@ def _run_pipeline(task_id: str, file_path: str, doc_entries: list[dict], is_zip:
             log.info(f"[{task_id}] Extracting ZIP: {filename}")
             
             with zipfile.ZipFile(file_path) as z:
-                pdf_names = [
+                zip_files = [
                     name for name in z.namelist()
-                    if name.lower().endswith(".pdf")
+                    if Path(name).suffix.lower() in SUPPORTED_EXTENSIONS_IN_ZIP
                     and not name.startswith("__MACOSX")
                     and not Path(name).name.startswith(".")
                 ]
                 
-                for name, entry in zip(pdf_names, doc_entries):
+                for name, entry in zip(zip_files, doc_entries):
                     target_name = entry["name"]
-                    dest_pdf = UPLOAD_PATH / target_name
-                    with open(dest_pdf, "wb") as f_pdf:
-                        f_pdf.write(z.read(name))
-                    extracted_paths.append(str(dest_pdf.resolve()))
+                    dest_file = UPLOAD_PATH / target_name
+                    with open(dest_file, "wb") as f_sub:
+                        f_sub.write(z.read(name))
+                    extracted_paths.append(str(dest_file.resolve()))
                     
-                    file_size = dest_pdf.stat().st_size
+                    file_size = dest_file.stat().st_size
                     entry["size"] = _human_size(file_size)
                     entry["size_bytes"] = file_size
         else:
             extracted_paths.append(file_path)
 
         # Stage 1: Text extraction
-        t.update({"stage": f"Extracting text from {len(extracted_paths)} PDF(s)…", "progress": 10})
+        t.update({"stage": f"Extracting text from {len(extracted_paths)} document(s)…", "progress": 10})
         log.info(f"[{task_id}] Extracting text from: {extracted_paths}")
 
         from member1.extractor import process_documents
         documents = process_documents(extracted_paths)
 
         if not documents:
-            raise ValueError("Extraction returned no content — check the PDF(s).")
+            raise ValueError("Extraction returned no content — check the document(s).")
 
         t.update({"stage": f"Chunked into {len(documents)} pieces", "progress": 40})
         log.info(f"[{task_id}] Chunks: {len(documents)}")
@@ -257,11 +281,14 @@ def _run_pipeline(task_id: str, file_path: str, doc_entries: list[dict], is_zip:
                 {
                     "text":        d.page_content,
                     "page":        d.metadata.get("page", d.metadata.get("chunk_index", 0)),
+                    "slide":       d.metadata.get("slide"),
+                    "worksheet":   d.metadata.get("worksheet"),
                     "source_file": d.metadata.get("source", filename),
                     "section":     d.metadata.get("section", ""),
                     "doc_type":    d.metadata.get("doc_type", "unknown"),
                     "is_table":    d.metadata.get("is_table", False),
                     "word_count":  d.metadata.get("word_count", 0),
+                    "chunk_index": d.metadata.get("chunk_index", 0),
                 }
                 for d in documents
             ]
@@ -274,10 +301,10 @@ def _run_pipeline(task_id: str, file_path: str, doc_entries: list[dict], is_zip:
                     with open(meta_file, encoding="utf-8") as f:
                         existing_chunks = json.load(f)
                     
-                    pdf_filenames = [entry["name"] for entry in doc_entries]
+                    sub_filenames = [entry["name"] for entry in doc_entries]
                     existing_chunks = [
                         c for c in existing_chunks
-                        if c.get("source_file") not in pdf_filenames
+                        if c.get("source_file") not in sub_filenames
                     ]
                     log.info(
                         f"[{task_id}] Merging {len(new_chunks)} new chunks "
@@ -298,20 +325,20 @@ def _run_pipeline(task_id: str, file_path: str, doc_entries: list[dict], is_zip:
         db_by_id = {d["id"]: d for d in docs_db}
 
         for entry in doc_entries:
-            pdf_filename = entry["name"]
-            pdf_chunks_count = sum(1 for d in documents if d.metadata.get("source") == pdf_filename)
-            pdf_path = UPLOAD_PATH / pdf_filename
-            page_count = _get_pdf_page_count(pdf_path)
+            sub_filename = entry["name"]
+            sub_chunks_count = sum(1 for d in documents if d.metadata.get("source") == sub_filename)
+            sub_path = UPLOAD_PATH / sub_filename
+            page_count = _get_page_count(sub_path)
 
             if entry["id"] in db_by_id:
                 db_by_id[entry["id"]]["status"] = "Indexed"
-                db_by_id[entry["id"]]["chunks"] = pdf_chunks_count
+                db_by_id[entry["id"]]["chunks"] = sub_chunks_count
                 db_by_id[entry["id"]]["pages"]  = page_count
                 db_by_id[entry["id"]]["size"]   = entry["size"]
                 db_by_id[entry["id"]]["size_bytes"] = entry["size_bytes"]
             else:
                 entry["status"] = "Indexed"
-                entry["chunks"] = pdf_chunks_count
+                entry["chunks"] = sub_chunks_count
                 entry["pages"]  = page_count
                 docs_db.append(entry)
 
@@ -326,7 +353,7 @@ def _run_pipeline(task_id: str, file_path: str, doc_entries: list[dict], is_zip:
             pass
 
         _append_activity(
-            f"{filename} indexed successfully ({len(documents)} chunks from {len(extracted_paths)} PDF(s))",
+            f"{filename} indexed successfully ({len(documents)} chunks from {len(extracted_paths)} document(s))",
             color="bg-purple-500"
         )
 
@@ -370,33 +397,46 @@ async def upload_document(
 ):
     filename_lower = file.filename.lower()
     is_zip = filename_lower.endswith(".zip")
-    is_pdf = filename_lower.endswith(".pdf")
+    ext = Path(filename_lower).suffix.lower()
     
-    if not (is_pdf or is_zip):
-        raise HTTPException(status_code=400, detail="Only PDF and ZIP files are supported.")
+    SUPPORTED_EXTENSIONS_ALL = {".pdf", ".docx", ".pptx", ".xlsx", ".txt", ".zip"}
+    if ext not in SUPPORTED_EXTENSIONS_ALL:
+        raise HTTPException(status_code=400, detail="Unsupported file format. Supported: PDF, DOCX, PPTX, XLSX, TXT, ZIP")
 
     task_id = str(uuid.uuid4())[:8]
 
-    dest = UPLOAD_PATH / file.filename
-    if dest.exists():
-        raise HTTPException(
-            status_code=409,
-            detail="This document has already been uploaded."
-        )
-
     contents = await file.read()
-    with open(dest, "wb") as f:
+    temp_dest = UPLOAD_PATH / f"temp_{uuid.uuid4()}{ext}"
+    with open(temp_dest, "wb") as f:
         f.write(contents)
+
+    try:
+        from member1.extractor import is_duplicate
+        dup, original = is_duplicate(str(temp_dest))
+        if dup:
+            temp_dest.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=409,
+                detail=f"Duplicate document detected. This file has the same content as '{original}' already in the knowledge base."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.warning(f"Duplicate check failed (continuing): {e}")
+
+    dest = _get_unique_filename(UPLOAD_PATH / file.filename)
+    temp_dest.rename(dest)
 
     doc_entries = []
     
     if is_zip:
+        SUPPORTED_EXTENSIONS_IN_ZIP = {".pdf", ".docx", ".pptx", ".xlsx", ".txt"}
         import zipfile
         try:
             with zipfile.ZipFile(dest) as z:
-                pdf_names = [
+                zip_files = [
                     name for name in z.namelist()
-                    if name.lower().endswith(".pdf")
+                    if Path(name).suffix.lower() in SUPPORTED_EXTENSIONS_IN_ZIP
                     and not name.startswith("__MACOSX")
                     and not Path(name).name.startswith(".")
                 ]
@@ -404,15 +444,15 @@ async def upload_document(
             dest.unlink(missing_ok=True)
             raise HTTPException(status_code=400, detail=f"Invalid ZIP file: {e}")
 
-        if not pdf_names:
+        if not zip_files:
             dest.unlink(missing_ok=True)
-            raise HTTPException(status_code=400, detail="No PDF files found inside the ZIP archive.")
+            raise HTTPException(status_code=400, detail="No supported files (PDF, DOCX, PPTX, XLSX, TXT) found inside the ZIP archive.")
 
         docs_db = _load_documents_db()
         
-        for name in pdf_names:
-            pdf_filename = Path(name).name
-            target_path = _get_unique_filename(UPLOAD_PATH / pdf_filename)
+        for name in zip_files:
+            sub_filename = Path(name).name
+            target_path = _get_unique_filename(UPLOAD_PATH / sub_filename)
             
             doc_id = str(uuid.uuid4())[:12]
             doc_entry = {
@@ -433,27 +473,13 @@ async def upload_document(
         _save_documents_db(docs_db)
         
     else:
-        try:
-            from member1.extractor import is_duplicate
-            dup, original = is_duplicate(str(dest))
-            if dup:
-                dest.unlink(missing_ok=True)
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Duplicate document detected. This file has the same content as '{original}' already in the knowledge base."
-                )
-        except HTTPException:
-            raise
-        except Exception as e:
-            log.warning(f"Duplicate check failed (continuing): {e}")
-
         file_size  = len(contents)
-        page_count = _get_pdf_page_count(dest)
+        page_count = _get_page_count(dest)
         doc_id  = str(uuid.uuid4())[:12]
 
         doc_entry = {
             "id":          doc_id,
-            "name":        file.filename,
+            "name":        dest.name,
             "category":    category,
             "size":        _human_size(file_size),
             "size_bytes":  file_size,
@@ -472,7 +498,7 @@ async def upload_document(
 
     _tasks[task_id] = {
         "task_id":  task_id,
-        "filename": file.filename,
+        "filename": dest.name,
         "stage":    "Queued…",
         "progress": 0,
         "done":     False,
@@ -481,7 +507,7 @@ async def upload_document(
     }
 
     _append_activity(
-        f"{file.filename} uploaded by user ({_human_size(len(contents))})",
+        f"{dest.name} uploaded by user ({_human_size(len(contents))})",
         color="bg-purple-500"
     )
 
@@ -490,7 +516,7 @@ async def upload_document(
     return {
         "task_id":  task_id,
         "doc_id":   doc_entries[0]["id"],
-        "filename": file.filename,
+        "filename": dest.name,
         "status":   "Processing",
         "message":  "Upload received. Pipeline started.",
     }
@@ -604,9 +630,15 @@ async def query(req: QueryRequest):
     for i, c in enumerate(chunks):
         section   = c.get("section", "")
         full_text = c["text"]
+        doc_type  = c.get("doc_type", "unknown")
+        
+        pdf_anchor = f"#page={c.get('page', 1)}" if doc_type == "pdf" else ""
+        
         citations.append({
             "source_file":    c["source_file"],
-            "page":           c["page"],
+            "page":           c.get("page", 1),
+            "slide":          c.get("slide"),
+            "worksheet":      c.get("worksheet"),
             "section":        section,
             "score":          round(c.get("score", 0), 3),
             "text":           full_text,
@@ -614,7 +646,7 @@ async def query(req: QueryRequest):
             "confidence":     min(int(c.get("score", 0) * 100), 99),
             "is_table":       c.get("is_table", False),
             "citation_label": f"Source {i+1}",
-            "pdf_anchor":     f"#page={c['page']}",
+            "pdf_anchor":     pdf_anchor,
         })
 
     return {
@@ -660,16 +692,28 @@ async def list_documents():
 @app.get("/api/documents/{filename}/view")
 async def view_document(filename: str):
     """
-    Serve the raw PDF file so the browser can open it.
-    The frontend appends #page=N so the browser PDF viewer
-    jumps directly to the cited page.
+    Serve the raw file with the correct media type so the browser can display or download it.
     """
-    pdf_path = UPLOAD_PATH / filename
-    if not pdf_path.exists():
+    file_path = UPLOAD_PATH / filename
+    if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"File '{filename}' not found.")
+    
+    ext = file_path.suffix.lower()
+    media_type = "application/octet-stream"
+    if ext == ".pdf":
+        media_type = "application/pdf"
+    elif ext == ".docx":
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    elif ext == ".pptx":
+        media_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    elif ext == ".xlsx":
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    elif ext in (".txt", ".log"):
+        media_type = "text/plain"
+
     return FileResponse(
-        path=str(pdf_path),
-        media_type="application/pdf",
+        path=str(file_path),
+        media_type=media_type,
         headers={"Content-Disposition": f"inline; filename=\"{filename}\""}
     )
 
