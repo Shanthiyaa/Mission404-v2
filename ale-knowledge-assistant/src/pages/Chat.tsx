@@ -5,11 +5,52 @@ import { queryDocuments, listDocuments } from '../api/client'
 import type { Message } from '../types'
 import type { Document } from '../api/client'
 
-const SUGGESTIONS = [
-  'What changed in the latest release?',
-  'How to configure BGP peer?',
-  'What is the OSPF hello timer?',
-]
+// Dynamic suggestion generation based on recent user messages
+function generateDynamicSuggestions(messages: Message[], selectedDocs: string[]): string[] {
+  // Gather recent user messages (up to last 3) for context
+  const recentMsgs = messages
+    .filter(m => m.role === 'user')
+    .slice(-3)
+    .map(m => m.content)
+    .join(' ');
+
+  // Include document titles as context
+  const docContext = selectedDocs.join(' ');
+
+  const combined = `${recentMsgs} ${docContext}`.trim();
+
+  if (!combined) return [];
+
+  // Simple keyword extraction: non‑stopwords, words length >=4
+  const stopwords = new Set([
+    'the', 'and', 'for', 'with', 'that', 'this', 'you', 'your',
+    'have', 'can', 'are', 'was', 'is', 'to', 'of', 'in',
+    'on', 'it', 'as', 'at', 'by', 'from'
+  ]);
+  const words = combined.toLowerCase().match(/\b\w{4,}\b/g) ?? [];
+  const freq: Record<string, number> = {};
+  words.forEach(w => {
+    if (!stopwords.has(w)) {
+      freq[w] = (freq[w] ?? 0) + 1;
+    }
+  });
+
+  const topKeywords = Object.entries(freq)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([kw]) => kw);
+
+  if (topKeywords.length === 0) return [];
+
+  const suggestions = topKeywords.flatMap(k => [
+    `Can you tell me more about "${k}"?`,
+    `What are the challenges related to "${k}"?`,
+    `How does "${k}" affect the overall context?`,
+  ]);
+
+  return suggestions.slice(0, 3);
+}
+
 
 const INITIAL: Message[] = [
   {
@@ -572,7 +613,7 @@ export default function Chat() {
           {/* Input area */}
           <div className="p-3 border-t border-gray-100 dark:border-gray-800">
             <div className="flex gap-2 mb-2 flex-wrap">
-              {SUGGESTIONS.map(s => (
+              {generateDynamicSuggestions(messages, selectedDocs).map(s => (
                 <button
                   key={s}
                   onClick={() => send(s)}
