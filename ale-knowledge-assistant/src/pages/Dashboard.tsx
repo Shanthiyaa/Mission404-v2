@@ -50,14 +50,6 @@ export default function Dashboard() {
           color: 'bg-green-50 text-green-600',
         },
         {
-          label: 'Avg. confidence',
-          value: stats.total_queries > 0 ? `${stats.avg_confidence}%` : '—',
-          sub:   stats.total_queries > 0 ? 'across queries' : 'no queries yet',
-          up:    true,
-          icon:  BarChart3,
-          color: 'bg-amber-50 text-amber-600',
-        },
-        {
           label: 'Active users',
           value: String(stats.active_users),
           sub:   'current session',
@@ -95,9 +87,9 @@ export default function Dashboard() {
       )}
 
       {/* Stat cards */}
-      <div className="grid grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-3 gap-3 mb-5">
         {loadingStats && !stats
-          ? Array.from({ length: 4 }).map((_, i) => (
+          ? Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="stat-card animate-pulse">
                 <div className="h-4 bg-gray-100 dark:bg-gray-700 rounded w-2/3 mb-2" />
                 <div className="h-7 bg-gray-100 dark:bg-gray-700 rounded w-1/2 mb-1" />

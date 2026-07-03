@@ -58,28 +58,20 @@ function GroupedFileSourceCard({ filename, citations }: GroupedFileSourceCardPro
                 </span>
                 <a
                   href={pdfUrl}
-  target="_blank"
-  rel="noopener noreferrer"
-  className="flex items-center gap-0.5 text-purple-500 hover:text-purple-700 transition-colors font-semibold"
-  title={`Open ${cite.source_file} at page ${cite.page}`}
->
-  Go to source <ExternalLink size={10} />
-</a>
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-0.5 text-purple-500 hover:text-purple-700 transition-colors font-semibold"
+                  title={`Open ${cite.source_file} at page ${cite.page}`}
+                >
+                  Go to source <ExternalLink size={10} />
+                </a>
               </div>
               <div className="border-l-2 border-purple-200 dark:border-purple-800 pl-2 bg-gray-50/50 dark:bg-gray-900/20 p-2 rounded-r">
-                <p className="text-xs text-gray-700 dark:text-gray-300 italic whitespace-pre-wrap leading-relaxed">
+                <p className="text-sm text-black dark:text-white whitespace-pre-wrap leading-relaxed">
                   {cite.text}
                 </p>
               </div>
-              <div className="flex items-center gap-2 mt-1.5">
-                <div className="flex-1 h-1 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-                  <div
-                    className="h-1 bg-green-500 rounded-full"
-                    style={{ width: cite.confidence + "%" }}
-                  />
-                </div>
-                <span className="text-[10px] text-gray-405 dark:text-gray-400">{cite.confidence}% match</span>
-              </div>
+
             </div>
           )
         })}
@@ -90,7 +82,7 @@ function GroupedFileSourceCard({ filename, citations }: GroupedFileSourceCardPro
 
 function cleanIntroductoryPhrases(text: string): string {
   let cleaned = text.trim();
-  
+
   const patterns = [
     /^(based\s+on\s+the\s+(provided\s+|uploaded\s+|retrieved\s+)?(context|documents?|files?|information|text)[,\s]*)+/i,
     /^(according\s+to\s+the\s+(provided\s+|uploaded\s+|retrieved\s+)?(context|documents?|files?|information|text)[,\s]*)+/i,
@@ -108,7 +100,7 @@ function cleanIntroductoryPhrases(text: string): string {
     /^(the\s+(provided\s+|uploaded\s+|retrieved\s+)?(context|documents?|files?)\s+(states?|shows?|indicates?|provides?|explains?|details?)\s+that[,\s]*)+/i,
     /^(from\s+the\s+(provided\s+|uploaded\s+|retrieved\s+)?(context|documents?|files?)[,\s]*)+/i
   ];
-  
+
   let matchFound = true;
   while (matchFound) {
     matchFound = false;
@@ -119,14 +111,14 @@ function cleanIntroductoryPhrases(text: string): string {
       }
     }
   }
-  
+
   // Clean up any remaining leading punctuation like commas or spaces
   cleaned = cleaned.replace(/^[,\s.:;-]+/, '').trim();
-  
+
   if (cleaned.length > 0) {
     cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
   }
-  
+
   return cleaned;
 }
 
@@ -144,13 +136,13 @@ function MarkdownRenderer({ content }: MarkdownRendererProps) {
     return segments.map((seg, sIdx) => {
       if (seg.startsWith('**') && seg.endsWith('**')) {
         return (
-          <strong key={sIdx} className="font-semibold text-gray-900 dark:text-white">
+          <strong key={sIdx} className="font-semibold text-black dark:text-white">
             {seg.slice(2, -2)}
           </strong>
         )
       } else if (seg.startsWith('`') && seg.endsWith('`')) {
         return (
-          <code key={sIdx} className="bg-gray-150 dark:bg-gray-800/80 px-1 py-0.5 rounded font-mono text-[0.9em] border border-gray-200 dark:border-gray-700/40 text-purple-600 dark:text-purple-400">
+          <code key={sIdx} className="bg-gray-150 dark:bg-gray-800/80 px-1 py-0.5 rounded text-sm border border-gray-200 dark:border-gray-700/40 text-black dark:text-white">
             {seg.slice(1, -1)}
           </code>
         )
@@ -161,7 +153,7 @@ function MarkdownRenderer({ content }: MarkdownRendererProps) {
   }
 
   return (
-    <div className="text-gray-800 dark:text-gray-200" style={{ fontSize: '17px', lineHeight: '1.7' }}>
+    <div className="text-black dark:text-white text-sm leading-relaxed">
       {parts.map((part, index) => {
         if (part.startsWith('```') && part.endsWith('```')) {
           const lines = part.slice(3, -3).trim().split('\n')
@@ -170,8 +162,8 @@ function MarkdownRenderer({ content }: MarkdownRendererProps) {
           const code = codeLines.join('\n')
 
           return (
-            <pre key={index} className="bg-gray-50 dark:bg-gray-800/60 p-3 rounded-lg overflow-x-auto border border-gray-200 dark:border-gray-700/50 font-mono text-sm leading-normal my-3">
-              <code>{code}</code>
+            <pre key={index} className="bg-gray-50 dark:bg-gray-800/60 p-3 rounded-lg overflow-x-auto border border-gray-200 dark:border-gray-700/50 text-sm leading-normal my-3 text-black dark:text-white">
+              <code className="text-black dark:text-white">{code}</code>
             </pre>
           )
         }
@@ -187,7 +179,7 @@ function MarkdownRenderer({ content }: MarkdownRendererProps) {
             elements.push(
               <ListTag key={`list-${key}`} className={`${listClasses} space-y-3 my-4`}>
                 {currentList.items.map((item, itemIdx) => (
-                  <li key={itemIdx} className="text-gray-800 dark:text-gray-200">
+                  <li key={itemIdx} className="text-black dark:text-white">
                     {item}
                   </li>
                 ))}
@@ -215,11 +207,11 @@ function MarkdownRenderer({ content }: MarkdownRendererProps) {
             const headingContent = renderTextWithInlineFormatting(headingText)
 
             if (level === 1) {
-              elements.push(<h1 key={i} className="text-xl font-bold text-gray-900 dark:text-white mt-4 mb-2">{headingContent}</h1>)
+              elements.push(<h1 key={i} className="text-sm font-bold text-black dark:text-white mt-4 mb-2">{headingContent}</h1>)
             } else if (level === 2) {
-              elements.push(<h2 key={i} className="text-lg font-bold text-gray-900 dark:text-white mt-3.5 mb-2">{headingContent}</h2>)
+              elements.push(<h2 key={i} className="text-sm font-bold text-black dark:text-white mt-3.5 mb-2">{headingContent}</h2>)
             } else {
-              elements.push(<h3 key={i} className="text-md font-semibold text-gray-900 dark:text-white mt-3 mb-1.5">{headingContent}</h3>)
+              elements.push(<h3 key={i} className="text-sm font-semibold text-black dark:text-white mt-3 mb-1.5">{headingContent}</h3>)
             }
             continue
           }
@@ -255,7 +247,7 @@ function MarkdownRenderer({ content }: MarkdownRendererProps) {
           // Normal paragraph text
           flushList(i)
           elements.push(
-            <p key={i} className="text-gray-800 dark:text-gray-200 mb-4 last:mb-0">
+            <p key={i} className="text-black dark:text-white mb-4 last:mb-0">
               {renderTextWithInlineFormatting(line)}
             </p>
           )
@@ -292,17 +284,17 @@ export default function Chat() {
   const [activeId, setActiveId] = useState<number>(
     () => loadPersistedChat().activeId
   )
-  const [input, setInput]       = useState('')
-  const [loading, setLoading]   = useState(false)
-  const [sessionId]             = useState(() => Math.random().toString(36).slice(2))
-  const bottomRef               = useRef<HTMLDivElement>(null)
-  const textareaRef             = useRef<HTMLTextAreaElement>(null)
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [sessionId] = useState(() => Math.random().toString(36).slice(2))
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const [availableDocs, setAvailableDocs] = useState<Document[]>([])
   const [selectedDocs, setSelectedDocs] = useState<string[]>([])
 
   const activeConv = conversations.find(c => c.id === activeId) ?? conversations[0]
-  const messages   = activeConv?.messages ?? INITIAL
+  const messages = activeConv?.messages ?? INITIAL
 
   useEffect(() => {
     listDocuments()
@@ -353,9 +345,9 @@ export default function Chat() {
       updateMessages(activeId, msgs => [
         ...msgs,
         {
-          role:       'assistant',
-          content:    res.answer,
-          citations:  res.citations,
+          role: 'assistant',
+          content: res.answer,
+          citations: res.citations,
           confidence: res.confidence,
         },
       ])
@@ -363,12 +355,12 @@ export default function Chat() {
       updateMessages(activeId, msgs => [
         ...msgs,
         {
-          role:    'assistant',
+          role: 'assistant',
           content: e.message?.includes('No documents')
             ? 'No documents have been indexed yet. Please upload a PDF first.'
             : e.message?.includes('LLM unavailable')
-            ? 'The Ollama LLM is not reachable. Make sure Ollama is running: `ollama serve`'
-            : 'Something went wrong: ' + e.message,
+              ? 'The Ollama LLM is not reachable. Make sure Ollama is running: `ollama serve`'
+              : 'Something went wrong: ' + e.message,
           error: true,
         },
       ])
