@@ -53,10 +53,13 @@ export default function Upload() {
   // ── Handle file selection ─────────────────────────────────────────────────
   const handleFiles = async (selected: FileList | null) => {
     if (!selected) return
-    const pdfs = Array.from(selected).filter(f => f.name.toLowerCase().endsWith('.pdf'))
-    if (!pdfs.length) return
+    const allowed = Array.from(selected).filter(f => {
+      const name = f.name.toLowerCase()
+      return name.endsWith('.pdf') || name.endsWith('.zip')
+    })
+    if (!allowed.length) return
 
-    const newEntries: UploadFile[] = pdfs.map(file => ({
+    const newEntries: UploadFile[] = allowed.map(file => ({
       file,
       taskId:   null,
       stage:    'Uploading…',
@@ -118,7 +121,7 @@ export default function Upload() {
     <div>
       <div className="mb-5">
         <h1 className="text-xl font-medium text-gray-900 dark:text-white">Upload documents</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Add PDFs to your knowledge base for AI-powered search</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Add PDFs or ZIP archives to your knowledge base for AI-powered search</p>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -141,7 +144,7 @@ export default function Upload() {
             )}
           >
             <CloudUpload size={32} className="text-purple-500 mx-auto mb-3" />
-            <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">Drop PDFs here</div>
+            <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">Drop PDFs or ZIP here</div>
             <div className="text-xs text-gray-500 dark:text-gray-400 mb-3">or click to browse · up to 200 MB per file</div>
             <div className="flex gap-2 justify-center flex-wrap">
               {['User guides', 'Release notes', 'SQA test cases', 'KCS articles'].map(t => (
@@ -151,7 +154,7 @@ export default function Upload() {
             <input
               ref={inputRef}
               type="file"
-              accept=".pdf"
+              accept=".pdf,.zip"
               multiple
               className="hidden"
               onChange={e => handleFiles(e.target.files)}

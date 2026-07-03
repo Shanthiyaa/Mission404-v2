@@ -11,6 +11,12 @@ import os
 import sys
 import re
 
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except AttributeError:
+    pass
+
 import json
 import time
 import uuid
@@ -175,24 +181,67 @@ GREETING_PATTERN = re.compile(
 
 def _is_smalltalk(text: str) -> bool:
     return bool(GREETING_PATTERN.match(text.strip()))
+
+
+def _get_unique_filename(target_path: Path) -> Path:
+    if not target_path.exists():
+        return target_path
+    stem = target_path.stem
+    suffix = target_path.suffix
+    parent = target_path.parent
+    counter = 1
+    while True:
+        new_path = parent / f"{stem}_{counter}{suffix}"
+        if not new_path.exists():
+            return new_path
+        counter += 1
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  BACKGROUND PIPELINE TASK
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _run_pipeline(task_id: str, file_path: str, doc_entry: dict) -> None:
+def _run_pipeline(task_id: str, file_path: str, doc_entries: list[dict], is_zip: bool = False) -> None:
     t = _tasks[task_id]
-    filename = doc_entry["name"]
+    filename = Path(file_path).name
 
     try:
+        extracted_paths = []
+        if is_zip:
+            import zipfile
+            t.update({"stage": "Extracting ZIP archive…", "progress": 5})
+            log.info(f"[{task_id}] Extracting ZIP: {filename}")
+            
+            with zipfile.ZipFile(file_path) as z:
+                pdf_names = [
+                    name for name in z.namelist()
+                    if name.lower().endswith(".pdf")
+                    and not name.startswith("__MACOSX")
+                    and not Path(name).name.startswith(".")
+                ]
+                
+                for name, entry in zip(pdf_names, doc_entries):
+                    target_name = entry["name"]
+                    dest_pdf = UPLOAD_PATH / target_name
+                    with open(dest_pdf, "wb") as f_pdf:
+                        f_pdf.write(z.read(name))
+                    extracted_paths.append(str(dest_pdf.resolve()))
+                    
+                    file_size = dest_pdf.stat().st_size
+                    entry["size"] = _human_size(file_size)
+                    entry["size_bytes"] = file_size
+        else:
+            extracted_paths.append(file_path)
+
         # Stage 1: Text extraction
-        t.update({"stage": "Extracting text…", "progress": 10})
-        log.info(f"[{task_id}] Extracting: {filename}")
+        t.update({"stage": f"Extracting text from {len(extracted_paths)} PDF(s)…", "progress": 10})
+        log.info(f"[{task_id}] Extracting text from: {extracted_paths}")
 
         from member1.extractor import process_documents
-        documents = process_documents([file_path])
+        documents = process_documents(extracted_paths)
 
         if not documents:
-            raise ValueError("Extraction returned no content — check the PDF.")
+            raise ValueError("Extraction returned no content — check the PDF(s).")
 
         t.update({"stage": f"Chunked into {len(documents)} pieces", "progress": 40})
         log.info(f"[{task_id}] Chunks: {len(documents)}")
@@ -224,9 +273,11 @@ def _run_pipeline(task_id: str, file_path: str, doc_entry: dict) -> None:
                 try:
                     with open(meta_file, encoding="utf-8") as f:
                         existing_chunks = json.load(f)
+                    
+                    pdf_filenames = [entry["name"] for entry in doc_entries]
                     existing_chunks = [
                         c for c in existing_chunks
-                        if c.get("source_file") != filename
+                        if c.get("source_file") not in pdf_filenames
                     ]
                     log.info(
                         f"[{task_id}] Merging {len(new_chunks)} new chunks "
@@ -242,11 +293,28 @@ def _run_pipeline(task_id: str, file_path: str, doc_entry: dict) -> None:
         t.update({"stage": "Indexing to FAISS…", "progress": 85})
         log.info(f"[{task_id}] FAISS index built with {len(merged_chunks)} total chunks.")
 
-        # Stage 3: Register document
+        # Stage 3: Register documents
         docs_db = _load_documents_db()
-        doc_entry["status"] = "Indexed"
-        doc_entry["chunks"] = len(documents)
-        docs_db.append(doc_entry)
+        db_by_id = {d["id"]: d for d in docs_db}
+
+        for entry in doc_entries:
+            pdf_filename = entry["name"]
+            pdf_chunks_count = sum(1 for d in documents if d.metadata.get("source") == pdf_filename)
+            pdf_path = UPLOAD_PATH / pdf_filename
+            page_count = _get_pdf_page_count(pdf_path)
+
+            if entry["id"] in db_by_id:
+                db_by_id[entry["id"]]["status"] = "Indexed"
+                db_by_id[entry["id"]]["chunks"] = pdf_chunks_count
+                db_by_id[entry["id"]]["pages"]  = page_count
+                db_by_id[entry["id"]]["size"]   = entry["size"]
+                db_by_id[entry["id"]]["size_bytes"] = entry["size_bytes"]
+            else:
+                entry["status"] = "Indexed"
+                entry["chunks"] = pdf_chunks_count
+                entry["pages"]  = page_count
+                docs_db.append(entry)
+
         _save_documents_db(docs_db)
 
         _retriever_cache["loaded"] = True
@@ -258,7 +326,7 @@ def _run_pipeline(task_id: str, file_path: str, doc_entry: dict) -> None:
             pass
 
         _append_activity(
-            f"{filename} indexed successfully ({len(documents)} chunks)",
+            f"{filename} indexed successfully ({len(documents)} chunks from {len(extracted_paths)} PDF(s))",
             color="bg-purple-500"
         )
 
@@ -274,9 +342,10 @@ def _run_pipeline(task_id: str, file_path: str, doc_entry: dict) -> None:
         log.error(f"[{task_id}] ✗ Pipeline failed: {exc}", exc_info=True)
 
         docs_db = _load_documents_db()
-        for d in docs_db:
-            if d.get("id") == doc_entry.get("id"):
-                d["status"] = "Failed"
+        db_by_id = {d["id"]: d for d in docs_db}
+        for entry in doc_entries:
+            if entry["id"] in db_by_id:
+                db_by_id[entry["id"]]["status"] = "Failed"
         _save_documents_db(docs_db)
 
         _append_activity(f"Failed to index {filename}: {exc}", color="bg-red-500")
@@ -299,11 +368,14 @@ async def upload_document(
     file: UploadFile = File(...),
     category: str    = Form("unknown"),
 ):
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+    filename_lower = file.filename.lower()
+    is_zip = filename_lower.endswith(".zip")
+    is_pdf = filename_lower.endswith(".pdf")
+    
+    if not (is_pdf or is_zip):
+        raise HTTPException(status_code=400, detail="Only PDF and ZIP files are supported.")
 
     task_id = str(uuid.uuid4())[:8]
-    doc_id  = str(uuid.uuid4())[:12]
 
     dest = UPLOAD_PATH / file.filename
     if dest.exists():
@@ -316,35 +388,87 @@ async def upload_document(
     with open(dest, "wb") as f:
         f.write(contents)
 
-    try:
-        from member1.extractor import is_duplicate
-        dup, original = is_duplicate(str(dest))
-        if dup:
+    doc_entries = []
+    
+    if is_zip:
+        import zipfile
+        try:
+            with zipfile.ZipFile(dest) as z:
+                pdf_names = [
+                    name for name in z.namelist()
+                    if name.lower().endswith(".pdf")
+                    and not name.startswith("__MACOSX")
+                    and not Path(name).name.startswith(".")
+                ]
+        except Exception as e:
             dest.unlink(missing_ok=True)
-            raise HTTPException(
-                status_code=409,
-                detail=f"Duplicate document detected. This file has the same content as '{original}' already in the knowledge base."
-            )
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.warning(f"Duplicate check failed (continuing): {e}")
+            raise HTTPException(status_code=400, detail=f"Invalid ZIP file: {e}")
 
-    file_size  = len(contents)
-    page_count = _get_pdf_page_count(dest)
+        if not pdf_names:
+            dest.unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail="No PDF files found inside the ZIP archive.")
 
-    doc_entry = {
-        "id":          doc_id,
-        "name":        file.filename,
-        "category":    category,
-        "size":        _human_size(file_size),
-        "size_bytes":  file_size,
-        "pages":       page_count,
-        "status":      "Processing",
-        "uploaded_at": datetime.now().isoformat(),
-        "task_id":     task_id,
-        "chunks":      0,
-    }
+        docs_db = _load_documents_db()
+        
+        for name in pdf_names:
+            pdf_filename = Path(name).name
+            target_path = _get_unique_filename(UPLOAD_PATH / pdf_filename)
+            
+            doc_id = str(uuid.uuid4())[:12]
+            doc_entry = {
+                "id":          doc_id,
+                "name":        target_path.name,
+                "category":    category,
+                "size":        "—",
+                "size_bytes":  0,
+                "pages":       0,
+                "status":      "Processing",
+                "uploaded_at": datetime.now().isoformat(),
+                "task_id":     task_id,
+                "chunks":      0,
+            }
+            doc_entries.append(doc_entry)
+            docs_db.append(doc_entry)
+            
+        _save_documents_db(docs_db)
+        
+    else:
+        try:
+            from member1.extractor import is_duplicate
+            dup, original = is_duplicate(str(dest))
+            if dup:
+                dest.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Duplicate document detected. This file has the same content as '{original}' already in the knowledge base."
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            log.warning(f"Duplicate check failed (continuing): {e}")
+
+        file_size  = len(contents)
+        page_count = _get_pdf_page_count(dest)
+        doc_id  = str(uuid.uuid4())[:12]
+
+        doc_entry = {
+            "id":          doc_id,
+            "name":        file.filename,
+            "category":    category,
+            "size":        _human_size(file_size),
+            "size_bytes":  file_size,
+            "pages":       page_count,
+            "status":      "Processing",
+            "uploaded_at": datetime.now().isoformat(),
+            "task_id":     task_id,
+            "chunks":      0,
+        }
+        doc_entry_copy = doc_entry.copy()
+        doc_entries.append(doc_entry_copy)
+        
+        docs_db = _load_documents_db()
+        docs_db.append(doc_entry)
+        _save_documents_db(docs_db)
 
     _tasks[task_id] = {
         "task_id":  task_id,
@@ -357,15 +481,15 @@ async def upload_document(
     }
 
     _append_activity(
-        f"{file.filename} uploaded by user ({_human_size(file_size)})",
+        f"{file.filename} uploaded by user ({_human_size(len(contents))})",
         color="bg-purple-500"
     )
 
-    background_tasks.add_task(_run_pipeline, task_id, str(dest), doc_entry)
+    background_tasks.add_task(_run_pipeline, task_id, str(dest), doc_entries, is_zip)
 
     return {
         "task_id":  task_id,
-        "doc_id":   doc_id,
+        "doc_id":   doc_entries[0]["id"],
         "filename": file.filename,
         "status":   "Processing",
         "message":  "Upload received. Pipeline started.",
