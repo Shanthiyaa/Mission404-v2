@@ -112,16 +112,19 @@ export default function Notification() {
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <p
+                      <div
                         onClick={() => handleNotificationClick(n)}
-                        className={`text-xs cursor-pointer hover:underline text-gray-800 dark:text-gray-200 leading-normal break-words ${
-                          isUnread ? 'font-semibold' : ''
-                        }`}
+                        className="text-xs cursor-pointer text-gray-800 dark:text-gray-200 leading-normal break-words"
                       >
-                        {n.text}
-                      </p>
+                        {n.title && (
+                          <div className={`font-semibold text-purple-600 dark:text-purple-400 mb-0.5 ${isUnread ? 'font-bold' : ''}`}>
+                            {n.title}
+                          </div>
+                        )}
+                        <p className={isUnread ? 'font-medium' : ''}>{n.text}</p>
+                      </div>
                       {isUnread && (
-                        <span className="w-1.5 h-1.5 bg-purple-600 rounded-full flex-shrink-0" />
+                        <span className="w-1.5 h-1.5 bg-purple-600 rounded-full flex-shrink-0 ml-auto" />
                       )}
                     </div>
                     <div className="flex items-center gap-2 mt-1">

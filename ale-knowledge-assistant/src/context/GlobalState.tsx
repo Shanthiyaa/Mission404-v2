@@ -271,6 +271,49 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
     initUser()
   }, [token, loadUserData, fetchNotifications])
 
+  // --- Periodic Heartbeat for Active User Tracking ---
+  useEffect(() => {
+    if (!token) return
+
+    const sendHeartbeat = async () => {
+      try {
+        await fetch('/api/auth/heartbeat', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        })
+      } catch (e) {
+        console.error('Heartbeat failed:', e)
+      }
+    }
+
+    sendHeartbeat()
+    const interval = setInterval(sendHeartbeat, 30000)
+
+    let lastActivityTime = Date.now()
+    const handleUserActivity = () => {
+      const now = Date.now()
+      if (now - lastActivityTime > 30000) {
+        lastActivityTime = now
+        sendHeartbeat()
+      }
+    }
+
+    window.addEventListener('mousemove', handleUserActivity)
+    window.addEventListener('keydown', handleUserActivity)
+    window.addEventListener('click', handleUserActivity)
+    window.addEventListener('scroll', handleUserActivity)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('mousemove', handleUserActivity)
+      window.removeEventListener('keydown', handleUserActivity)
+      window.removeEventListener('click', handleUserActivity)
+      window.removeEventListener('scroll', handleUserActivity)
+    }
+  }, [token])
+
   // --- Load Indexed Documents Cache ---
   const refreshDocuments = useCallback(async () => {
     if (!token) return

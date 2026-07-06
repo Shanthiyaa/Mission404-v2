@@ -30,11 +30,19 @@ export interface Citation {
 }
 
 export interface Message {
+  id?: number
   role: 'user' | 'assistant'
   content: string
   citations?: Citation[]
   confidence?: number
   error?: boolean
+}
+
+export interface ChartsData {
+  documents_over_time: { date: string; count: number }[]
+  queries_per_day: { date: string; count: number }[]
+  document_categories: { category: string; count: number }[]
+  processing_status: { status: string; count: number }[]
 }
 
 export interface Stats {
@@ -44,6 +52,7 @@ export interface Stats {
   avg_confidence: number
   active_users: number
   faiss_ready: boolean
+  charts?: ChartsData
 }
 
 export interface ActivityItem {

@@ -131,6 +131,21 @@ def get_current_user(
         user_id = payload.get("user_id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid authorization token.")
+            
+        # Update last_activity (throttled to 30s)
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            if user:
+                now = datetime.utcnow()
+                if not user.last_activity or (now - user.last_activity).total_seconds() > 30:
+                    user.last_activity = now
+                    db.commit()
+        except Exception as e:
+            log.warning(f"Failed to update last_activity: {e}")
+        finally:
+            db.close()
+            
         return payload
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Session expired or invalid authorization token.")
@@ -184,7 +199,15 @@ def _append_activity(user_id: int, text: str, color: str = "bg-purple-500") -> N
         db.close()
 
 
-def _create_notification(user_id: int, type: str, text: str, link: str = None) -> None:
+def _create_notification(
+    user_id: int, 
+    type: str, 
+    text: str, 
+    link: str = None,
+    title: str = None,
+    target_conv_id: str = None,
+    target_msg_id: int = None
+) -> None:
     db = SessionLocal()
     try:
         notif = Notification(
@@ -193,7 +216,10 @@ def _create_notification(user_id: int, type: str, text: str, link: str = None) -
             text=text,
             link=link,
             is_read=False,
-            created_at=datetime.utcnow()
+            created_at=datetime.utcnow(),
+            title=title,
+            target_conv_id=target_conv_id,
+            target_msg_id=target_msg_id
         )
         db.add(notif)
         db.commit()
@@ -453,8 +479,10 @@ def _run_pipeline(task_id: str, file_path: str, doc_entries: list[dict], user_id
         _create_notification(
             user_id,
             type="doc_processed",
-            text=f'"{filename}" has been successfully indexed.',
-            link="/knowledge-base"
+            text=f'Document "{filename}" has been indexed successfully.',
+            link=f"/knowledge-base?highlight={doc_entries[0]['id']}",
+            title="Document Processing Completed",
+            target_conv_id=doc_entries[0]['id']
         )
 
         t.update({
@@ -486,7 +514,9 @@ def _run_pipeline(task_id: str, file_path: str, doc_entries: list[dict], user_id
             user_id,
             type="doc_failed",
             text=f'Failed to index "{filename}": {exc}',
-            link="/upload"
+            link=f"/knowledge-base?highlight={doc_entries[0]['id']}",
+            title="Document Processing Failed",
+            target_conv_id=doc_entries[0]['id']
         )
 
         t.update({
@@ -519,7 +549,8 @@ async def signup(req: SignupRequest, db = Depends(get_db)):
         username=req.name,
         email=req.email,
         hashed_password=hashed,
-        department=req.department
+        department=req.department,
+        last_activity=datetime.utcnow()
     )
     db.add(user)
     db.commit()
@@ -532,6 +563,9 @@ async def login(req: LoginRequest, db = Depends(get_db)):
     if not user or not verify_password(req.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password.")
     
+    user.last_activity = datetime.utcnow()
+    db.commit()
+
     token = create_access_token(user.id, user.email)
     return {
         "access_token": token,
@@ -544,6 +578,15 @@ async def login(req: LoginRequest, db = Depends(get_db)):
             "profile_picture": user.profile_picture
         }
     }
+
+@app.post("/api/auth/heartbeat")
+async def auth_heartbeat(current_user: dict = Depends(get_current_user), db = Depends(get_db)):
+    user_id = current_user["user_id"]
+    user = db.query(User).filter(User.id == user_id).first()
+    if user:
+        user.last_activity = datetime.utcnow()
+        db.commit()
+    return {"success": True}
 
 @app.get("/api/auth/profile")
 async def get_profile(current_user: dict = Depends(get_current_user), db = Depends(get_db)):
@@ -625,7 +668,10 @@ async def list_notifications(current_user: dict = Depends(get_current_user), db 
             "text": n.text,
             "link": n.link,
             "is_read": n.is_read,
-            "time": _format_time_ago(n.created_at.isoformat())
+            "time": _format_time_ago(n.created_at.isoformat()),
+            "title": n.title,
+            "target_conv_id": n.target_conv_id,
+            "target_msg_id": n.target_msg_id
         }
         for n in notifs
     ]
@@ -682,12 +728,13 @@ async def list_conversations(current_user: dict = Depends(get_current_user), db 
         for m in msgs:
             citations = json.loads(m.citations) if m.citations else None
             messages_list.append({
+                "id": m.id,
                 "role": m.role,
                 "content": m.content,
                 "citations": citations
             })
         result.append({
-            "id": int(c.id) if c.id.isdigit() else c.id,
+            "id": int(c.id) if str(c.id).isdigit() else c.id,
             "title": c.title,
             "messages": messages_list
         })
@@ -1013,8 +1060,11 @@ async def query(req: QueryRequest, current_user: dict = Depends(get_current_user
                         _create_notification(
                             user_id,
                             type="ai_answer",
-                            text="AI has completed answering your question.",
-                            link=f"/chat?id={req.session_id}"
+                            text=f'Your answer for "{q[:40]}..." is ready.',
+                            link=f"/chat?id={req.session_id}&msgId={assist_msg.id}",
+                            title="Query Answer Completed",
+                            target_conv_id=req.session_id,
+                            target_msg_id=assist_msg.id
                         )
                         
                         return {
@@ -1184,11 +1234,16 @@ async def query(req: QueryRequest, current_user: dict = Depends(get_current_user
     )
     db.add(assist_msg)
     db.commit()
+    db.refresh(assist_msg)
+    
     _create_notification(
         user_id,
         type="ai_answer",
-        text="AI has completed answering your question.",
-        link=f"/chat?id={req.session_id}"
+        text=f'Your answer for "{q[:40]}..." is ready.',
+        link=f"/chat?id={req.session_id}&msgId={assist_msg.id}",
+        title="Query Answer Completed",
+        target_conv_id=req.session_id,
+        target_msg_id=assist_msg.id
     )
 
     return {
@@ -1333,13 +1388,56 @@ async def get_stats(current_user: dict = Depends(get_current_user), db = Depends
         Message.role == "user"
     ).count()
 
+    # Active Users
+    from datetime import datetime, timedelta
+    active_threshold = datetime.utcnow() - timedelta(minutes=5)
+    active_users_count = db.query(User).filter(User.last_activity >= active_threshold).count()
+    active_users_count = max(active_users_count, 1)
+
+    # 1. Documents uploaded over time
+    from collections import defaultdict
+    upload_history = defaultdict(int)
+    for d in docs:
+        date_str = d.uploaded_at.strftime("%Y-%m-%d")
+        upload_history[date_str] += 1
+    sorted_uploads = [{"date": k, "count": v} for k, v in sorted(upload_history.items())]
+
+    # 2. Queries per day
+    user_queries = db.query(Message).join(Conversation).filter(
+        Conversation.user_id == user_id,
+        Message.role == "user"
+    ).all()
+    query_history = defaultdict(int)
+    for mq in user_queries:
+        date_str = mq.timestamp.strftime("%Y-%m-%d")
+        query_history[date_str] += 1
+    sorted_queries = [{"date": k, "count": v} for k, v in sorted(query_history.items())]
+
+    # 3. Document categories
+    category_counts = defaultdict(int)
+    for d in docs:
+        category_counts[d.category] += 1
+    cat_data = [{"category": k, "count": v} for k, v in category_counts.items()]
+
+    # 4. Processing status
+    status_counts = defaultdict(int)
+    for d in docs:
+        status_counts[d.status] += 1
+    status_data = [{"status": k, "count": v} for k, v in status_counts.items()]
+
     return {
         "total_documents":   total_docs,
         "indexed_documents": indexed_docs,
         "total_queries":     total_q,
         "avg_confidence":    0,
-        "active_users":      1,
+        "active_users":      active_users_count,
         "faiss_ready":       _retriever_cache.get("loaded", False),
+        "charts": {
+            "documents_over_time": sorted_uploads,
+            "queries_per_day": sorted_queries,
+            "document_categories": cat_data,
+            "processing_status": status_data
+        }
     }
 
 

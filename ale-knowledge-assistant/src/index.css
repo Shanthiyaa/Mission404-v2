@@ -53,7 +53,39 @@
   40% { opacity: 1; transform: scale(1); }
 }
 
-::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
-.dark ::-webkit-scrollbar-thumb { background: #374151; }
+/* ChatGPT-like visible scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.45);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.7);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.45);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.7);
+}
+
+/* Message pulse-highlight animation */
+@keyframes pulse-highlight-msg {
+  0% { background-color: transparent; }
+  25% { background-color: rgba(147, 51, 234, 0.15); }
+  100% { background-color: transparent; }
+}
+.highlight-message {
+  animation: pulse-highlight-msg 3.5s ease-in-out;
+  border-radius: 8px;
+}

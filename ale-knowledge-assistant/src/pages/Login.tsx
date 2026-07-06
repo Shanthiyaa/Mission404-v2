@@ -37,7 +37,6 @@ const FEATURES = [
 const STATS = [
   { value: '10x', label: 'Faster than manual search', icon: Zap },
   { value: '95%', label: 'Answer accuracy rate', icon: CheckCircle2 },
-  { value: '<2s', label: 'Average response time', icon: Clock },
   { value: '100+', label: 'Document formats supported', icon: Database },
 ]
 
@@ -157,14 +156,12 @@ export default function Login({ onToggleDark }: LoginProps) {
             fontSize: '44px', fontWeight: 700, lineHeight: 1.12,
             color: 'white', letterSpacing: '-0.03em', marginBottom: '16px',
           }}>
-            Your enterprise<br />
-            documents,{' '}
             <span style={{
               background: 'linear-gradient(90deg, #c4b5fd, #f0abfc)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
             }}>
-              finally intelligent
+              Ask. Discover. Resolve
             </span>
           </h1>
 
@@ -173,12 +170,12 @@ export default function Login({ onToggleDark }: LoginProps) {
             lineHeight: 1.6, maxWidth: '440px', marginBottom: '36px',
           }}>
             Stop digging through folders. Ask a question, get a precise answer
-            with the exact page and section it came from — in under 2 seconds.
+            with the exact page and section it came from.
           </p>
 
           {/* Stats row */}
           <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+            display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
             gap: '12px', marginBottom: '40px',
           }}>
             {STATS.map(({ value, label, icon: Icon }) => (

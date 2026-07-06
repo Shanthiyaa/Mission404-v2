@@ -156,6 +156,13 @@ export async function deleteDocument(docId: string): Promise<{ success: boolean;
 
 // ── Stats ──────────────────────────────────────────────────────────────────
 
+export interface ChartsData {
+  documents_over_time: { date: string; count: number }[]
+  queries_per_day: { date: string; count: number }[]
+  document_categories: { category: string; count: number }[]
+  processing_status: { status: string; count: number }[]
+}
+
 export interface Stats {
   total_documents: number
   indexed_documents: number
@@ -163,6 +170,7 @@ export interface Stats {
   avg_confidence: number
   active_users: number
   faiss_ready: boolean
+  charts?: ChartsData
 }
 
 export async function getStats(): Promise<Stats> {
@@ -250,6 +258,9 @@ export interface NotificationItem {
   link?: string
   is_read: boolean
   time: string
+  title?: string
+  target_conv_id?: string
+  target_msg_id?: number
 }
 
 export async function getNotifications(): Promise<NotificationItem[]> {

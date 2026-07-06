@@ -6,6 +6,9 @@ export default function DocPreview() {
   const [searchParams] = useSearchParams()
   const filename = searchParams.get('file')
   const anchor = searchParams.get('anchor')
+  const page = searchParams.get('page') || '1'
+
+  const isPdf = filename?.toLowerCase().endsWith('.pdf')
 
   const [htmlContent, setHtmlContent] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -18,8 +21,20 @@ export default function DocPreview() {
       return
     }
 
+    if (isPdf) {
+      setLoading(false)
+      setError(null)
+      return
+    }
+
     setLoading(true)
-    fetch(`/api/documents/${encodeURIComponent(filename)}/view-html`)
+    const token = localStorage.getItem('ale_jwt_token')
+    const headers: Record<string, string> = {}
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+
+    fetch(`/api/documents/${encodeURIComponent(filename)}/view-html`, { headers })
       .then(async res => {
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}: Failed to load document preview`)
@@ -36,12 +51,13 @@ export default function DocPreview() {
       .finally(() => {
         setLoading(false)
       })
-  }, [filename])
+  }, [filename, isPdf])
 
   const searchText = searchParams.get('text')
 
   useEffect(() => {
-    if (loading || !htmlContent) return
+    if (loading || isPdf) return
+    if (!htmlContent) return
 
     const timer = setTimeout(() => {
       // 1. Excel sheet tab auto-activation
@@ -69,57 +85,66 @@ export default function DocPreview() {
       const targetText = searchText ? decodeURIComponent(searchText).trim() : '';
 
       if (targetText) {
-        const searchScope = (anchor && anchor.startsWith('sheet-'))
+        // Find best search segments to search progressively:
+        const searchSegments: string[] = [];
+        if (targetText.length < 150) {
+          searchSegments.push(targetText);
+        }
+
+        // Split into lines
+        const lines = targetText.split(/[\r\n]+/).map(l => l.trim()).filter(l => l.length >= 15);
+        if (lines.length > 0) {
+          const sortedLines = [...lines].sort((a, b) => b.length - a.length);
+          searchSegments.push(...sortedLines);
+        }
+
+        // Split into sentences
+        const sentences = targetText.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length >= 15);
+        if (sentences.length > 0) {
+          const sortedSentences = [...sentences].sort((a, b) => b.length - a.length);
+          searchSegments.push(...sortedSentences);
+        }
+
+        // Split into smaller fragments
+        if (targetText.length >= 40) {
+          searchSegments.push(targetText.slice(0, 40).trim());
+        }
+
+        const uniqueSegments = Array.from(new Set(searchSegments));
+
+        const searchScope = (anchor && (anchor.startsWith('sheet-') || anchor.startsWith('slide-')) && document.getElementById(anchor))
           ? document.getElementById(anchor)
           : document.querySelector('.prose');
 
         if (searchScope) {
-          const walker = document.createTreeWalker(searchScope, NodeFilter.SHOW_TEXT, null);
-          let currentNode = walker.nextNode();
-          
-          while (currentNode) {
-            const nodeText = currentNode.nodeValue || '';
-            const matchIndex = nodeText.toLowerCase().indexOf(targetText.toLowerCase());
-            if (matchIndex !== -1) {
-              const range = document.createRange();
-              range.setStart(currentNode, matchIndex);
-              range.setEnd(currentNode, matchIndex + targetText.length);
-              
-              const span = document.createElement('span');
-              span.className = 'highlight-section inline-block bg-purple-100 dark:bg-purple-900/50 border-l-4 border-purple-600 px-1.5 py-0.5 rounded';
-              span.style.scrollMargin = '100px';
-              
-              range.surroundContents(span);
-              span.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              textHighlighted = true;
-              break;
-            }
-            currentNode = walker.nextNode();
-          }
+          for (const segment of uniqueSegments) {
+            const walker = document.createTreeWalker(searchScope, NodeFilter.SHOW_TEXT, null);
+            let currentNode = walker.nextNode();
+            let matched = false;
 
-          if (!textHighlighted && targetText.length > 50) {
-            const subset = targetText.slice(0, 50).trim();
-            const walker2 = document.createTreeWalker(searchScope, NodeFilter.SHOW_TEXT, null);
-            let node2 = walker2.nextNode();
-            while (node2) {
-              const nodeText = node2.nodeValue || '';
-              const matchIndex = nodeText.toLowerCase().indexOf(subset.toLowerCase());
+            while (currentNode) {
+              const nodeText = currentNode.nodeValue || '';
+              const matchIndex = nodeText.toLowerCase().indexOf(segment.toLowerCase());
               if (matchIndex !== -1) {
                 const range = document.createRange();
-                range.setStart(node2, matchIndex);
-                const highlightLength = Math.min(subset.length, nodeText.length - matchIndex);
-                range.setEnd(node2, matchIndex + highlightLength);
-                
+                range.setStart(currentNode, matchIndex);
+                range.setEnd(currentNode, matchIndex + segment.length);
+
                 const span = document.createElement('span');
                 span.className = 'highlight-section inline-block bg-purple-100 dark:bg-purple-900/50 border-l-4 border-purple-600 px-1.5 py-0.5 rounded';
                 span.style.scrollMargin = '100px';
-                
+
                 range.surroundContents(span);
                 span.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 textHighlighted = true;
+                matched = true;
                 break;
               }
-              node2 = walker2.nextNode();
+              currentNode = walker.nextNode();
+            }
+
+            if (matched) {
+              break;
             }
           }
         }
@@ -136,7 +161,7 @@ export default function DocPreview() {
     }, 200);
 
     return () => clearTimeout(timer);
-  }, [loading, anchor, htmlContent, searchText])
+  }, [loading, anchor, htmlContent, searchText, isPdf])
 
   return (
     <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-950 overflow-hidden text-gray-900 dark:text-white">
@@ -156,7 +181,7 @@ export default function DocPreview() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-auto bg-white p-6">
+      <main className={`flex-1 bg-white ${isPdf ? 'p-0 overflow-hidden' : 'p-6 overflow-auto'}`}>
         {loading && (
           <div className="flex flex-col items-center justify-center h-full">
             <Loader size={30} className="text-purple-600 animate-spin mb-2" />
@@ -180,7 +205,15 @@ export default function DocPreview() {
           </div>
         )}
 
-        {!loading && !error && htmlContent && (
+        {!loading && !error && isPdf && (
+          <iframe
+            src={`/api/documents/${encodeURIComponent(filename || '')}/view?token=${encodeURIComponent(localStorage.getItem('ale_jwt_token') || '')}#page=${page}`}
+            className="w-full h-full border-0"
+            title={filename || 'PDF Preview'}
+          />
+        )}
+
+        {!loading && !error && !isPdf && htmlContent && (
           <div className="relative">
             <style>{`
               .highlight-section {

@@ -29,6 +29,7 @@ class User(Base):
     department = Column(String(100), nullable=True)
     display_name = Column(String(100), nullable=True)
     profile_picture = Column(Text, nullable=True)
+    last_activity = Column(DateTime, default=datetime.utcnow, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     documents = relationship("Document", back_populates="owner", cascade="all, delete-orphan")
@@ -103,6 +104,9 @@ class Notification(Base):
     link = Column(String(250), nullable=True)
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    title = Column(String(200), nullable=True)
+    target_conv_id = Column(String(50), nullable=True)
+    target_msg_id = Column(Integer, nullable=True)
 
     owner = relationship("User", back_populates="notifications")
 
@@ -115,8 +119,17 @@ def init_db():
     from sqlalchemy import inspect, text
     inspector = inspect(engine)
     columns = [c["name"] for c in inspector.get_columns("users")]
+    columns_notif = [c["name"] for c in inspector.get_columns("notifications")]
     with engine.begin() as conn:
         if "display_name" not in columns:
             conn.execute(text("ALTER TABLE users ADD COLUMN display_name VARCHAR(100)"))
         if "profile_picture" not in columns:
             conn.execute(text("ALTER TABLE users ADD COLUMN profile_picture TEXT"))
+        if "last_activity" not in columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN last_activity DATETIME"))
+        if "title" not in columns_notif:
+            conn.execute(text("ALTER TABLE notifications ADD COLUMN title VARCHAR(200)"))
+        if "target_conv_id" not in columns_notif:
+            conn.execute(text("ALTER TABLE notifications ADD COLUMN target_conv_id VARCHAR(50)"))
+        if "target_msg_id" not in columns_notif:
+            conn.execute(text("ALTER TABLE notifications ADD COLUMN target_msg_id INTEGER"))

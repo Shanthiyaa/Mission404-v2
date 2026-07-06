@@ -46,8 +46,7 @@ function GroupedFileSourceCard({ filename, citations }: GroupedFileSourceCardPro
           let linkUrl = ''
           const textParam = cite.text ? `&text=${encodeURIComponent(cite.text)}` : ''
           if (ext === 'pdf') {
-            const anchor = cite.pdf_anchor ?? ("#page=" + cite.page)
-            linkUrl = "/api/documents/" + encodeURIComponent(cite.source_file) + "/view" + anchor
+            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&page=${cite.page || 1}`
           } else if (ext === 'pptx') {
             linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&anchor=slide-${cite.slide || cite.page}${textParam}`
           } else if (ext === 'docx') {
@@ -309,14 +308,18 @@ export default function Chat() {
 
   const [searchParams, setSearchParams] = useSearchParams()
   const queryId = searchParams.get('id')
+  const msgIdToScrollRef = useRef<string | null>(searchParams.get('msgId'))
 
   const [input, setInput] = useState('')
   const [sessionId] = useState(() => Math.random().toString(36).slice(2))
   const [docSelectionError, setDocSelectionError] = useState<string | null>(null)
   const [showScrollBottom, setShowScrollBottom] = useState(false)
+  const [showQnNav, setShowQnNav] = useState(false)
   
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const scrollbarClickRef = useRef(false)
+  const scrollTopOnDownRef = useRef(0)
 
   const { scrollPositions, saveScrollPosition } = useGlobalState()
 
@@ -334,10 +337,35 @@ export default function Chat() {
       if (conversations.some(c => c.id === targetId)) {
         setActiveId(targetId)
       }
-      // Clear query parameter so it doesn't persist on navigations
-      setSearchParams({}, { replace: true })
+      
+      const msgId = searchParams.get('msgId')
+      if (msgId) {
+        msgIdToScrollRef.current = msgId
+      } else {
+        setSearchParams({}, { replace: true })
+      }
     }
   }, [queryId, conversations, setActiveId, setSearchParams])
+
+  // Handle scrolling to and highlighting specific target messages (from notifications)
+  useEffect(() => {
+    if (msgIdToScrollRef.current && !loading && messages.length > 0) {
+      const targetMsgId = msgIdToScrollRef.current
+      const timer = setTimeout(() => {
+        const el = document.getElementById(`msg-${targetMsgId}`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          el.classList.add('highlight-message')
+          setTimeout(() => {
+            el.classList.remove('highlight-message')
+          }, 3500)
+          msgIdToScrollRef.current = null
+          setSearchParams({}, { replace: true })
+        }
+      }, 300)
+      return () => clearTimeout(timer)
+    }
+  }, [messages, loading, setSearchParams])
 
   const scrollToBottom = () => {
     if (scrollContainerRef.current) {
@@ -347,10 +375,7 @@ export default function Chat() {
 
   const scrollToBottomSmooth = () => {
     if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTo({
-        top: scrollContainerRef.current.scrollHeight,
-        behavior: 'smooth'
-      })
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
     }
   }
 
@@ -361,6 +386,54 @@ export default function Chat() {
       const isNearBottom = container.scrollHeight - container.clientHeight - container.scrollTop < 150
       setShowScrollBottom(!isNearBottom)
     }
+  }
+
+  // --- Scrollbar Click Question Navigator ---
+  const handleScrollAreaMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    const rect = container.getBoundingClientRect()
+    // clientWidth excludes scrollbar, so clicks beyond it are on the scrollbar
+    if (e.clientX >= rect.left + container.clientWidth) {
+      scrollbarClickRef.current = true
+      scrollTopOnDownRef.current = container.scrollTop
+    } else {
+      scrollbarClickRef.current = false
+      setShowQnNav(false)
+    }
+  }
+
+  const handleScrollAreaMouseUp = () => {
+    if (!scrollbarClickRef.current) return
+    scrollbarClickRef.current = false
+    const container = scrollContainerRef.current
+    if (!container) return
+    const scrollDiff = Math.abs(container.scrollTop - scrollTopOnDownRef.current)
+    if (scrollDiff < 5) {
+      // Click without drag → toggle question navigator
+      setShowQnNav(prev => !prev)
+    }
+  }
+
+  const userQuestions = messages
+    .map((m, idx) => ({ text: m.content, role: m.role, id: m.id, idx }))
+    .filter(q => q.role === 'user')
+    .map(q => ({
+      text: q.text,
+      elementId: q.id ? `msg-${q.id}` : `msg-idx-${q.idx}`
+    }))
+
+  const jumpToQuestion = (elementId: string) => {
+    setShowQnNav(false)
+    setTimeout(() => {
+      const container = scrollContainerRef.current
+      const el = document.getElementById(elementId)
+      if (container && el) {
+        container.scrollTop = Math.max(0, el.offsetTop - 60)
+        el.classList.add('highlight-message')
+        setTimeout(() => el.classList.remove('highlight-message'), 3500)
+      }
+    }, 100)
   }
 
   // Restore scroll position on conversation switch or mount
@@ -557,9 +630,19 @@ export default function Chat() {
           </div>
 
           {/* Messages */}
-          <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            onMouseDown={handleScrollAreaMouseDown}
+            onMouseUp={handleScrollAreaMouseUp}
+            className="flex-1 overflow-y-auto p-4 space-y-4"
+          >
             {messages.map((m, i) => (
-              <div key={i} className={clsx('flex gap-2.5 items-start', m.role === 'user' && 'flex-row-reverse')}>
+              <div 
+                key={i} 
+                id={m.id ? `msg-${m.id}` : `msg-idx-${i}`}
+                className={clsx('flex gap-2.5 items-start transition-all', m.role === 'user' && 'flex-row-reverse')}
+              >
                 <div className={clsx(
                   'w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0 mt-0.5',
                   m.role === 'assistant'
@@ -646,6 +729,37 @@ export default function Chat() {
             >
               <ArrowDown size={16} />
             </button>
+          )}
+
+          {/* Question Navigator Popup */}
+          {showQnNav && (
+            <div className="absolute top-14 right-4 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-30 overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 dark:border-gray-700">
+                <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Questions in Chat</span>
+                <button
+                  onClick={() => setShowQnNav(false)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs font-bold leading-none"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="max-h-48 overflow-y-auto p-2 space-y-1">
+                {userQuestions.length === 0 ? (
+                  <div className="text-[11px] text-gray-400 italic px-1">No questions asked yet.</div>
+                ) : (
+                  userQuestions.map((q, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => jumpToQuestion(q.elementId)}
+                      className="w-full text-left text-xs text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded px-2 py-1.5 truncate block font-medium transition-colors"
+                      title={q.text}
+                    >
+                      {idx + 1}. {q.text}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
           )}
 
           {/* Input area */}
