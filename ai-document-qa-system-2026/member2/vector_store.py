@@ -138,3 +138,120 @@ def add_to_faiss_index(chunks: List[Dict], index_path: str = None):
         json.dump(metadata, f, ensure_ascii=False, indent=2)
 
     print(f"Added {len(chunks)} new chunks to FAISS.")
+
+
+def delete_from_faiss_index(filename: str, index_path: str = None) -> None:
+    """
+    Deletes vectors and metadata associated with a specific filename from the FAISS index
+    WITHOUT regenerating embeddings for the other files.
+    """
+    index_path = index_path or FAISS_INDEX_DIR
+    index_file = os.path.join(index_path, "index.faiss")
+    metadata_file = os.path.join(index_path, "metadata.json")
+
+    if not os.path.exists(index_file) or not os.path.exists(metadata_file):
+        print("Index or metadata file does not exist, nothing to delete.")
+        return
+
+    # Load metadata
+    with open(metadata_file, "r", encoding="utf-8") as f:
+        all_chunks = json.load(f)
+
+    # Find the indices of chunks that do NOT belong to this filename
+    keep_indices = []
+    remaining_chunks = []
+    for idx, chunk in enumerate(all_chunks):
+        if chunk.get("source_file") != filename:
+            keep_indices.append(idx)
+            remaining_chunks.append(chunk)
+
+    if not remaining_chunks:
+        # If no chunks remain, delete the files completely
+        for f_name in ["index.faiss", "metadata.json"]:
+            f_path = os.path.join(index_path, f_name)
+            if os.path.exists(f_path):
+                try:
+                    os.remove(f_path)
+                except Exception:
+                    pass
+        print("All documents deleted from FAISS index — files cleared.")
+        return
+
+    # Load FAISS index
+    index = faiss.read_index(index_file)
+    total_vectors = index.ntotal
+
+    if total_vectors == 0:
+        return
+
+    # Reconstruct all vectors from the flat index
+    vectors = index.reconstruct_n(0, total_vectors)
+
+    # Filter vectors
+    remaining_vectors = vectors[keep_indices]
+
+    # Create a fresh IndexFlatIP
+    new_index = faiss.IndexFlatIP(index.d)
+    new_index.add(remaining_vectors)
+
+    # Save updated FAISS index
+    faiss.write_index(new_index, index_file)
+
+    # Save updated metadata
+    with open(metadata_file, "w", encoding="utf-8") as f:
+        json.dump(remaining_chunks, f, ensure_ascii=False, indent=2)
+
+    print(f"Successfully deleted chunks for {filename} from FAISS. Remaining: {len(remaining_chunks)} chunks.")
+
+
+def remove_filenames_from_faiss_index(filenames: List[str], index_path: str = None) -> List[Dict]:
+    """
+    Removes vectors and metadata for a list of filenames from the FAISS index
+    WITHOUT regenerating embeddings for other files. Returns the remaining chunks metadata.
+    """
+    index_path = index_path or FAISS_INDEX_DIR
+    index_file = os.path.join(index_path, "index.faiss")
+    metadata_file = os.path.join(index_path, "metadata.json")
+
+    if not os.path.exists(index_file) or not os.path.exists(metadata_file):
+        return []
+
+    with open(metadata_file, "r", encoding="utf-8") as f:
+        all_chunks = json.load(f)
+
+    keep_indices = []
+    remaining_chunks = []
+    for idx, chunk in enumerate(all_chunks):
+        if chunk.get("source_file") not in filenames:
+            keep_indices.append(idx)
+            remaining_chunks.append(chunk)
+
+    if len(remaining_chunks) == len(all_chunks):
+        # No filenames matched, nothing was removed
+        return all_chunks
+
+    if not remaining_chunks:
+        # Everything was removed
+        for f_name in ["index.faiss", "metadata.json"]:
+            f_path = os.path.join(index_path, f_name)
+            if os.path.exists(f_path):
+                try:
+                    os.remove(f_path)
+                except Exception:
+                    pass
+        return []
+
+    index = faiss.read_index(index_file)
+    total_vectors = index.ntotal
+    if total_vectors > 0:
+        vectors = index.reconstruct_n(0, total_vectors)
+        remaining_vectors = vectors[keep_indices]
+        
+        new_index = faiss.IndexFlatIP(index.d)
+        new_index.add(remaining_vectors)
+        faiss.write_index(new_index, index_file)
+
+    with open(metadata_file, "w", encoding="utf-8") as f:
+        json.dump(remaining_chunks, f, ensure_ascii=False, indent=2)
+
+    return remaining_chunks

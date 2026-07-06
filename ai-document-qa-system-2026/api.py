@@ -368,7 +368,7 @@ def _run_pipeline(task_id: str, file_path: str, doc_entries: list[dict], user_id
         log.info(f"[{task_id}] Embedding…")
 
         with _faiss_lock:
-            from member2.vector_store import build_and_persist_faiss_index
+            from member2.vector_store import add_to_faiss_index, remove_filenames_from_faiss_index
 
             new_chunks = [
                 {
@@ -387,39 +387,31 @@ def _run_pipeline(task_id: str, file_path: str, doc_entries: list[dict], user_id
             ]
             log.info(f"[{task_id}] New chunks to embed: {len(new_chunks)}")
 
-            existing_chunks: list[dict] = []
             meta_file = FAISS_PATH / "metadata.json"
-            has_overlap = False
             index_exists = meta_file.exists() and (FAISS_PATH / "index.faiss").exists()
 
             if index_exists:
                 try:
-                    with open(meta_file, encoding="utf-8") as f:
-                        existing_chunks = json.load(f)
-                    
+                    # Remove any existing vectors for these filenames first
+                    # This uses reconstruct_n — NO embedding regeneration
                     sub_filenames = [entry["name"] for entry in doc_entries]
-                    len_before = len(existing_chunks)
-                    existing_chunks = [
-                        c for c in existing_chunks
-                        if c.get("source_file") not in sub_filenames
-                    ]
-                    has_overlap = len(existing_chunks) < len_before
+                    remaining = remove_filenames_from_faiss_index(sub_filenames)
                     log.info(
-                        f"[{task_id}] Merging {len(new_chunks)} new chunks "
-                        f"with {len(existing_chunks)} existing chunks."
+                        f"[{task_id}] Cleaned overlapping filenames. "
+                        f"{len(remaining)} existing chunks remain in index."
                     )
                 except Exception as e:
-                    log.warning(f"[{task_id}] Could not read existing metadata: {e}. Starting fresh.")
-                    existing_chunks = []
-                    index_exists = False
+                    log.warning(f"[{task_id}] Could not clean existing index: {e}. Continuing.")
 
-            if index_exists and not has_overlap:
-                from member2.vector_store import add_to_faiss_index
-                add_to_faiss_index(new_chunks)
-                merged_chunks = existing_chunks + new_chunks
-            else:
-                merged_chunks = existing_chunks + new_chunks
-                build_and_persist_faiss_index(merged_chunks)
+            # Only embed the NEW chunks — never re-embed existing ones
+            add_to_faiss_index(new_chunks)
+            
+            # Read back final metadata count for logging
+            try:
+                with open(meta_file, encoding="utf-8") as f:
+                    merged_chunks = json.load(f)
+            except Exception:
+                merged_chunks = new_chunks
 
         t.update({"stage": "Indexing to FAISS…", "progress": 85})
         log.info(f"[{task_id}] FAISS index built with {len(merged_chunks)} total chunks.")
@@ -695,7 +687,7 @@ async def mark_notification_read(notif_id: int, current_user: dict = Depends(get
 @app.post("/api/notifications/read-all")
 async def mark_all_notifications_read(current_user: dict = Depends(get_current_user), db = Depends(get_db)):
     user_id = current_user["user_id"]
-    db.query(Notification).filter(Notification.user_id == user_id, Notification.is_read == False).update({Notification.is_read: True})
+    db.query(Notification).filter(Notification.user_id == user_id).update({Notification.is_read: True}, synchronize_session=False)
     db.commit()
     return {"success": True}
 
@@ -712,7 +704,7 @@ async def delete_single_notification(notif_id: int, current_user: dict = Depends
 @app.delete("/api/notifications")
 async def delete_all_notifications(current_user: dict = Depends(get_current_user), db = Depends(get_db)):
     user_id = current_user["user_id"]
-    db.query(Notification).filter(Notification.user_id == user_id).delete()
+    db.query(Notification).filter(Notification.user_id == user_id).delete(synchronize_session=False)
     db.commit()
     return {"success": True}
 
@@ -836,9 +828,72 @@ async def upload_document(
             dest.unlink(missing_ok=True)
             raise HTTPException(status_code=400, detail="No supported files (PDF, DOCX, PPTX, XLSX, TXT) found inside the ZIP archive.")
 
-        for name in zip_files:
-            sub_filename = Path(name).name
+        # Load user's existing documents to check for duplicates
+        user_docs = db.query(Document).filter(Document.user_id == user_id).all()
+        user_doc_names = [d.name for d in user_docs]
+
+        valid_zip_files = []
+        duplicate_details = []
+        
+        temp_extract_dir = UPLOAD_PATH / f"temp_zip_{uuid.uuid4()}"
+        temp_extract_dir.mkdir(parents=True, exist_ok=True)
+        
+        try:
+            with zipfile.ZipFile(dest) as z:
+                for name in zip_files:
+                    sub_filename = Path(name).name
+                    temp_sub_path = temp_extract_dir / sub_filename
+                    
+                    with open(temp_sub_path, "wb") as f_temp:
+                        f_temp.write(z.read(name))
+                    
+                    from member1.extractor import calculate_file_hash
+                    sub_hash = calculate_file_hash(str(temp_sub_path))
+                    
+                    dup = False
+                    original = ""
+                    for existing_name in user_doc_names:
+                        p = UPLOAD_PATH / existing_name
+                        if p.exists() and p.is_file():
+                            if calculate_file_hash(str(p)) == sub_hash:
+                                dup = True
+                                original = existing_name
+                                break
+                    
+                    if dup:
+                        duplicate_details.append(f'"{sub_filename}" is a duplicate of "{original}"')
+                        temp_sub_path.unlink()
+                    else:
+                        valid_zip_files.append((name, sub_filename, temp_sub_path))
+        except Exception as e:
+            shutil.rmtree(temp_extract_dir, ignore_errors=True)
+            dest.unlink(missing_ok=True)
+            raise HTTPException(status_code=500, detail=f"Error processing ZIP contents: {e}")
+
+        if duplicate_details and not valid_zip_files:
+            shutil.rmtree(temp_extract_dir, ignore_errors=True)
+            dest.unlink(missing_ok=True)
+            msg = "All files in the ZIP are duplicates: " + ", ".join(duplicate_details)
+            _create_notification(
+                user_id,
+                type="duplicate_upload",
+                text="Upload blocked: ZIP archive contains only duplicate files.",
+                link="/upload"
+            )
+            raise HTTPException(status_code=409, detail=msg)
+
+        # Notify the user about duplicates that were skipped, if any
+        if duplicate_details:
+            _create_notification(
+                user_id,
+                type="duplicate_upload",
+                text=f"Skipped {len(duplicate_details)} duplicate documents from uploaded ZIP: {', '.join(duplicate_details[:2])}{'...' if len(duplicate_details) > 2 else ''}",
+                link="/upload"
+            )
+
+        for name, sub_filename, temp_sub_path in valid_zip_files:
             target_path = _get_unique_filename(UPLOAD_PATH / sub_filename)
+            shutil.move(str(temp_sub_path), str(target_path))
             
             doc_id = str(uuid.uuid4())[:12]
             doc_entry = {
@@ -855,7 +910,6 @@ async def upload_document(
             }
             doc_entries.append(doc_entry)
             
-            # Save Document DB model initial entry
             db_doc = Document(
                 id=doc_id,
                 user_id=user_id,
@@ -871,6 +925,7 @@ async def upload_document(
             )
             db.add(db_doc)
         db.commit()
+        shutil.rmtree(temp_extract_dir, ignore_errors=True)
         
     else:
         file_size  = len(contents)
@@ -940,10 +995,53 @@ async def upload_document(
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/api/upload/status/{task_id}")
-async def upload_status(task_id: str, current_user: dict = Depends(get_current_user)):
-    if task_id not in _tasks:
+async def upload_status(task_id: str, current_user: dict = Depends(get_current_user), db = Depends(get_db)):
+    if task_id in _tasks:
+        return _tasks[task_id]
+
+    # Check DB for documents with this task_id
+    docs = db.query(Document).filter(Document.task_id == task_id).all()
+    if not docs:
         raise HTTPException(status_code=404, detail="Task not found.")
-    return _tasks[task_id]
+
+    # If there are documents, check if they are completed
+    statuses = [d.status for d in docs]
+    if all(s == "Indexed" for s in statuses):
+        return {
+            "task_id":  task_id,
+            "filename": docs[0].name if docs else "document",
+            "stage":    "Complete",
+            "progress": 100,
+            "done":     True,
+            "error":    None,
+            "chunks":   sum(d.chunks for d in docs),
+        }
+    elif any(s == "Failed" for s in statuses):
+        return {
+            "task_id":  task_id,
+            "filename": docs[0].name if docs else "document",
+            "stage":    "Failed",
+            "progress": 0,
+            "done":     True,
+            "error":    "Document processing failed",
+            "chunks":   0,
+        }
+    else:
+        # Task is not in _tasks but docs are still in "Processing" status in DB.
+        # This indicates the server restarted or crashed during processing.
+        # Mark them as "Failed" in the DB.
+        for d in docs:
+            d.status = "Failed"
+        db.commit()
+        return {
+            "task_id":  task_id,
+            "filename": docs[0].name if docs else "document",
+            "stage":    "Failed",
+            "progress": 0,
+            "done":     True,
+            "error":    "Server restarted, processing interrupted",
+            "chunks":   0,
+        }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -995,11 +1093,15 @@ async def query(req: QueryRequest, current_user: dict = Depends(get_current_user
         )
         db.add(assist_msg)
         db.commit()
+        db.refresh(user_msg)
+        db.refresh(assist_msg)
         return {
             "answer": ans,
             "citations": [],
             "confidence": 100,
             "session_id": req.session_id,
+            "message_id": assist_msg.id,
+            "user_message_id": user_msg.id,
         }
 
     # ── Smart History Lookup (Semantic Cache) ─────────────────────────────────
@@ -1057,6 +1159,8 @@ async def query(req: QueryRequest, current_user: dict = Depends(get_current_user
                         )
                         db.add(assist_msg)
                         db.commit()
+                        db.refresh(user_msg)
+                        db.refresh(assist_msg)
                         _create_notification(
                             user_id,
                             type="ai_answer",
@@ -1072,7 +1176,9 @@ async def query(req: QueryRequest, current_user: dict = Depends(get_current_user
                             "citations": citations,
                             "confidence": 100,
                             "session_id": req.session_id,
-                            "cached": True
+                            "cached": True,
+                            "message_id": assist_msg.id,
+                            "user_message_id": user_msg.id,
                         }
         except Exception as e:
             log.warning(f"Smart History Lookup failed: {e}")
@@ -1234,6 +1340,7 @@ async def query(req: QueryRequest, current_user: dict = Depends(get_current_user
     )
     db.add(assist_msg)
     db.commit()
+    db.refresh(user_msg)
     db.refresh(assist_msg)
     
     _create_notification(
@@ -1251,6 +1358,8 @@ async def query(req: QueryRequest, current_user: dict = Depends(get_current_user
         "citations":  citations,
         "confidence": confidence,
         "session_id": req.session_id,
+        "message_id": assist_msg.id,
+        "user_message_id": user_msg.id,
     }
 
 
@@ -1336,30 +1445,17 @@ async def delete_document(doc_id: str, current_user: dict = Depends(get_current_
         file_path.unlink()
 
     with _faiss_lock:
-        meta_file = FAISS_PATH / "metadata.json"
-        if meta_file.exists():
-            with open(meta_file, encoding="utf-8") as f:
-                all_chunks = json.load(f)
-
-            remaining = [c for c in all_chunks if c.get("source_file") != filename]
-
-            if remaining:
-                try:
-                    from member2.vector_store import build_and_persist_faiss_index
-                    build_and_persist_faiss_index(remaining)
-                    try:
-                        from member2.retriever import clear_cache
-                        clear_cache()
-                    except ImportError:
-                        pass
-                    log.info(f"FAISS rebuilt after deleting {filename} ({len(remaining)} chunks remain)")
-                except Exception as exc:
-                    log.error(f"FAISS rebuild failed: {exc}")
-            else:
-                for f in FAISS_PATH.iterdir():
-                    f.unlink()
-                _retriever_cache["loaded"] = False
-                log.info("All documents deleted — FAISS index cleared.")
+        try:
+            from member2.vector_store import delete_from_faiss_index
+            delete_from_faiss_index(filename)
+            try:
+                from member2.retriever import clear_cache
+                clear_cache()
+            except ImportError:
+                pass
+            _ensure_retriever()
+        except Exception as exc:
+            log.error(f"FAISS deletion failed: {exc}")
 
     _append_activity(user_id, f"{filename} deleted from knowledge base", color="bg-red-500")
     _create_notification(
