@@ -38,7 +38,6 @@ function SettingRow({ label, sub, right }: { label: string; sub: string; right: 
 export default function Settings({ dark, onToggleDark, user }: SettingsProps) {
   const { multiDoc, setMultiDoc, showCitations, setShowCitations } = useGlobalState()
   const [compact, setCompact] = useState(true)
-  const [showConf, setShowConf] = useState(true)
   const [model, setModel] = useState('Llama 3.2')
   const [k, setK] = useState('3')
 
@@ -55,7 +54,6 @@ export default function Settings({ dark, onToggleDark, user }: SettingsProps) {
             <h2 className="text-sm font-medium text-gray-900 dark:text-white mb-1 pb-2 border-b border-gray-50 dark:border-gray-800">Appearance</h2>
             <SettingRow label="Dark mode" sub="Switch to dark theme" right={<Toggle on={dark} onToggle={onToggleDark} />} />
             <SettingRow label="Compact view" sub="Reduce spacing in lists" right={<Toggle on={compact} onToggle={() => setCompact(c => !c)} />} />
-            <SettingRow label="Confidence scores" sub="Display AI confidence on answers" right={<Toggle on={showConf} onToggle={() => setShowConf(c => !c)} />} />
           </div>
 
           <div className="card">

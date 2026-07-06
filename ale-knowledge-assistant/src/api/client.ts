@@ -4,6 +4,7 @@
  */
 
 const BASE = '/api'
+export const TOKEN_KEY = 'ale_jwt_token'
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -16,8 +17,16 @@ async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
+  const token = localStorage.getItem(TOKEN_KEY)
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers: { ...headers, ...options.headers },
     ...options,
   })
 
@@ -51,7 +60,18 @@ export async function uploadDocument(
   form.append('file', file)
   form.append('category', category)
 
-  const res = await fetch(`${BASE}/upload`, { method: 'POST', body: form })
+  const token = localStorage.getItem(TOKEN_KEY)
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  const res = await fetch(`${BASE}/upload`, { 
+    method: 'POST', 
+    headers,
+    body: form 
+  })
+
   if (!res.ok) {
     let detail = `HTTP ${res.status}`
     try { const e = await res.json(); detail = e.detail || detail } catch {}
@@ -165,4 +185,58 @@ export async function getActivity(): Promise<ActivityItem[]> {
 
 export async function getHealth(): Promise<{ status: string; faiss_ready: boolean }> {
   return request('/health')
+}
+
+// ── Auth Endpoints ─────────────────────────────────────────────────────────
+
+export interface AuthUser {
+  name: string
+  email: string
+  department: string
+}
+
+export interface LoginResponse {
+  access_token: string
+  token_type: string
+  user: AuthUser
+}
+
+export async function authLogin(email: string, password: string): Promise<LoginResponse> {
+  return request<LoginResponse>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  })
+}
+
+export async function authSignup(name: string, email: string, department: string, password: string): Promise<{ success: boolean; message: string }> {
+  return request<{ success: boolean; message: string }>('/auth/signup', {
+    method: 'POST',
+    body: JSON.stringify({ name, email, department, password }),
+  })
+}
+
+export async function getProfile(): Promise<AuthUser> {
+  return request<AuthUser>('/auth/profile')
+}
+
+// ── Conversations Endpoints ──────────────────────────────────────────────────
+
+export interface Message {
+  role: 'user' | 'assistant'
+  content: string
+  citations?: Citation[]
+}
+
+export interface ConversationEntry {
+  id: number
+  title: string
+  messages: Message[]
+}
+
+export async function getConversations(): Promise<ConversationEntry[]> {
+  return request<ConversationEntry[]>('/conversations')
+}
+
+export async function deleteConversation(convId: string): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>(`/conversations/${convId}`, { method: 'DELETE' })
 }

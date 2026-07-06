@@ -1,17 +1,18 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Brain, Eye, EyeOff } from 'lucide-react'
+import { useGlobalState } from '../context/GlobalState'
 
-interface SignupProps { onLogin: (user: { name: string; email: string; department: string }) => void }
-
-export default function Signup({ onLogin }: SignupProps) {
+export default function Signup() {
   const navigate = useNavigate()
+  const { signup } = useGlobalState()
   const [name, setName]           = useState('')
   const [email, setEmail]         = useState('')
   const [department, setDepartment] = useState('')
   const [password, setPassword]   = useState('')
   const [showPass, setShowPass]   = useState(false)
   const [errors, setErrors]       = useState<Record<string, string>>({})
+  const [loading, setLoading]     = useState(false)
 
   const validate = () => {
     const e: Record<string, string> = {}
@@ -25,31 +26,19 @@ export default function Signup({ onLogin }: SignupProps) {
     return Object.keys(e).length === 0
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
 
-    // Check if email already registered
-    let existing = []
+    setLoading(true)
     try {
-      existing = JSON.parse(localStorage.getItem('ale_users') || '[]')
-      if (!Array.isArray(existing)) {
-        existing = []
-      }
-    } catch (err) {
-      existing = []
+      await signup(name.trim(), email.trim(), department.trim(), password)
+      navigate('/login', { state: { signupSuccess: true } })
+    } catch (err: any) {
+      setErrors({ email: err.message || 'Signup failed. Please try again.' })
+    } finally {
+      setLoading(false)
     }
-
-    if (existing.find((u: { email: string }) => u.email === email)) {
-      setErrors({ email: 'This email is already registered. Please sign in.' })
-      return
-    }
-
-    // Save new user
-    const newUser = { name: name.trim(), email, department: department.trim(), password }
-    localStorage.setItem('ale_users', JSON.stringify([...existing, newUser]))
-
-    navigate('/login', { state: { signupSuccess: true } })
   }
 
   return (
@@ -144,13 +133,14 @@ export default function Signup({ onLogin }: SignupProps) {
 
             <button
               type="submit"
-              className="w-full flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold text-white transition-all"
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold text-white transition-all disabled:opacity-50"
               style={{
                 background: 'linear-gradient(135deg, #7c3aed 0%, #9333ea 100%)',
                 boxShadow: '0 2px 12px rgba(124,58,237,0.4)',
               }}
             >
-              Create account
+              {loading ? 'Creating account...' : 'Create account'}
             </button>
           </form>
           <p className="text-center text-xs text-gray-500 mt-4">

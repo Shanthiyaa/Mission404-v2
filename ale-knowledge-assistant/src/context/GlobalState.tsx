@@ -4,9 +4,15 @@ import {
   deleteDocument,
   uploadDocument,
   getUploadStatus,
-  queryDocuments
+  queryDocuments,
+  authLogin,
+  authSignup,
+  getProfile,
+  getConversations,
+  deleteConversation,
+  TOKEN_KEY
 } from '../api/client'
-import type { Document } from '../api/client'
+import type { Document, Citation } from '../api/client'
 import type { UploadFile, Message } from '../types'
 
 export interface ConversationEntry {
@@ -16,6 +22,13 @@ export interface ConversationEntry {
 }
 
 interface GlobalStateContextType {
+  token: string | null
+  user: { name: string; email: string; department: string } | null
+  authLoading: boolean
+  login: (email: string, password: string) => Promise<void>
+  signup: (name: string, email: string, department: string, password: string) => Promise<void>
+  logout: () => void
+
   conversations: ConversationEntry[]
   activeId: number
   activeQueries: Record<number, boolean>
@@ -27,7 +40,11 @@ interface GlobalStateContextType {
   multiDoc: boolean
   showCitations: boolean
   
+  scrollPositions: Record<number, number>
+  saveScrollPosition: (id: number, top: number) => void
+
   newConversation: () => void
+  deleteConv: (convId: number) => Promise<void>
   setActiveId: (id: number) => void
   setConversations: React.Dispatch<React.SetStateAction<ConversationEntry[]>>
   setSelectedDocs: React.Dispatch<React.SetStateAction<string[]>>
@@ -50,32 +67,20 @@ const INITIAL: Message[] = [
   },
 ]
 
-const CHAT_STORAGE_KEY = 'ale_chat_state'
-
-function loadPersistedChat(): { conversations: ConversationEntry[]; activeId: number } {
-  const fallback = {
-    conversations: [{ id: 1, title: 'New conversation', messages: INITIAL }],
-    activeId: 1,
-  }
-  try {
-    const saved = localStorage.getItem(CHAT_STORAGE_KEY)
-    if (!saved) return fallback
-    const parsed = JSON.parse(saved)
-    if (!parsed?.conversations?.length) return fallback
-    return parsed
-  } catch {
-    return fallback
-  }
-}
-
 export function GlobalStateProvider({ children }: { children: React.ReactNode }) {
+  // --- Auth State ---
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY))
+  const [user, setUser] = useState<{ name: string; email: string; department: string } | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+
+  // --- Scroll State (to preserve position during background gen & navigation) ---
+  const [scrollPositions, setScrollPositions] = useState<Record<number, number>>({})
+
   // --- Chat & Conversations ---
-  const [conversations, setConversations] = useState<ConversationEntry[]>(
-    () => loadPersistedChat().conversations
-  )
-  const [activeId, setActiveId] = useState<number>(
-    () => loadPersistedChat().activeId
-  )
+  const [conversations, setConversations] = useState<ConversationEntry[]>([
+    { id: 1, title: 'New conversation', messages: INITIAL }
+  ])
+  const [activeId, setActiveId] = useState<number>(1)
   const [activeQueries, setActiveQueries] = useState<Record<number, boolean>>({})
   const [selectedDocs, setSelectedDocs] = useState<string[]>([])
 
@@ -84,7 +89,7 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
 
   // --- Documents caching ---
   const [documents, setDocuments] = useState<Document[]>([])
-  const [docsLoading, setDocsLoading] = useState(true)
+  const [docsLoading, setDocsLoading] = useState(false)
   const [docsError, setDocsError] = useState<string | null>(null)
 
   // --- Search Preferences ---
@@ -107,20 +112,49 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
     localStorage.setItem('ale_pref_citations', String(val))
   }
 
-  // --- Persist Chat State ---
-  useEffect(() => {
-    try {
-      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify({ conversations, activeId }))
-    } catch (err) {
-      console.error('Failed to persist chat state', err)
-    }
-  }, [conversations, activeId])
+  const saveScrollPosition = useCallback((id: number, top: number) => {
+    setScrollPositions(prev => ({ ...prev, [id]: top }))
+  }, [])
 
-  // --- Load Indexed Documents Cache ---
-  const refreshDocuments = useCallback(async () => {
-    setDocsLoading(true)
-    setDocsError(null)
+  // --- Auth Handlers ---
+  const login = async (email: string, password: string) => {
+    const res = await authLogin(email, password)
+    localStorage.setItem(TOKEN_KEY, res.access_token)
+    setToken(res.access_token)
+    setUser(res.user)
+  }
+
+  const signup = async (name: string, email: string, department: string, password: string) => {
+    await authSignup(name, email, department, password)
+  }
+
+  const logout = () => {
+    localStorage.removeItem(TOKEN_KEY)
+    setToken(null)
+    setUser(null)
+    setConversations([{ id: 1, title: 'New conversation', messages: INITIAL }])
+    setActiveId(1)
+    setDocuments([])
+    setScrollPositions({})
+  }
+
+  // --- Re-load user data on login or session load ---
+  const loadUserData = useCallback(async () => {
     try {
+      const convs = await getConversations()
+      setConversations(convs.length > 0 ? convs : [{ id: 1, title: 'New conversation', messages: INITIAL }])
+      if (convs.length > 0) {
+        setActiveId(convs[0].id)
+      } else {
+        setActiveId(1)
+      }
+    } catch {
+      setConversations([{ id: 1, title: 'New conversation', messages: INITIAL }])
+      setActiveId(1)
+    }
+
+    try {
+      setDocsLoading(true)
       const docs = await listDocuments()
       setDocuments(docs)
     } catch (e: any) {
@@ -131,11 +165,41 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
   }, [])
 
   useEffect(() => {
-    refreshDocuments().catch(err => console.error(err))
-  }, [refreshDocuments])
+    async function initUser() {
+      if (token) {
+        try {
+          const profile = await getProfile()
+          setUser(profile)
+          await loadUserData()
+        } catch {
+          localStorage.removeItem(TOKEN_KEY)
+          setToken(null)
+          setUser(null)
+        }
+      }
+      setAuthLoading(false)
+    }
+    initUser()
+  }, [token, loadUserData])
+
+  // --- Load Indexed Documents Cache ---
+  const refreshDocuments = useCallback(async () => {
+    if (!token) return
+    setDocsLoading(true)
+    setDocsError(null)
+    try {
+      const docs = await listDocuments()
+      setDocuments(docs)
+    } catch (e: any) {
+      setDocsError(e.message || 'Failed to load documents')
+    } finally {
+      setDocsLoading(false)
+    }
+  }, [token])
 
   // --- Polling upload status globally ---
   useEffect(() => {
+    if (!token) return
     const processing = files.filter(f => f.status === 'processing' && f.taskId)
     if (!processing.length) return
 
@@ -167,34 +231,51 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
 
       setFiles(updatedFiles)
 
-      // Refresh documents when any file transitions to 'done' (successfully indexed)
       if (anyStatusChanged) {
         refreshDocuments().catch(err => console.error(err))
       }
     }, 1500)
 
     return () => clearInterval(id)
-  }, [files, refreshDocuments])
+  }, [files, token, refreshDocuments])
 
   // --- Handlers ---
   const newConversation = () => {
     const id = Date.now()
-    setConversations(prev => [...prev, { id, title: 'New conversation', messages: INITIAL }])
+    setConversations(prev => [{ id, title: 'New conversation', messages: INITIAL }, ...prev])
     setActiveId(id)
+  }
+
+  const deleteConv = async (convId: number) => {
+    setConversations(prev => prev.filter(c => c.id !== convId))
+    if (activeId === convId) {
+      const remaining = conversations.filter(c => c.id !== convId)
+      if (remaining.length > 0) {
+        setActiveId(remaining[0].id)
+      } else {
+        const fallbackId = Date.now()
+        setConversations([{ id: fallbackId, title: 'New conversation', messages: INITIAL }])
+        setActiveId(fallbackId)
+      }
+    }
+    
+    try {
+      await deleteConversation(String(convId))
+    } catch (e) {
+      console.error('Failed to delete conversation on server:', e)
+    }
   }
 
   const deleteDoc = async (docId: string) => {
     const target = documents.find(d => d.id === docId)
     if (!target) return
     
-    // Optimistic delete: immediately remove from global cache to make UI instant
     setDocuments(prev => prev.filter(d => d.id !== docId))
     setSelectedDocs(prev => prev.filter(name => name !== target.name))
 
     try {
       await deleteDocument(docId)
     } catch (e) {
-      // Revert cache if failed
       refreshDocuments().catch(err => console.error(err))
       throw e;
     }
@@ -225,10 +306,8 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
       }
     })
 
-    // Store in global queue so Upload page displays it immediately
     setFiles(prev => [...prev, ...newEntries])
 
-    // Upload each valid file sequentially
     for (const entry of newEntries) {
       if (entry.status === 'error') continue
       try {
@@ -266,7 +345,6 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
     updateMessages(currentActiveId, msgs => [...msgs, { role: 'user', content: q }])
     setActiveQueries(prev => ({ ...prev, [currentActiveId]: true }))
 
-    // Update conversation title if default
     setConversations(prev =>
       prev.map(c =>
         c.id === currentActiveId && c.title === 'New conversation'
@@ -282,7 +360,7 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
         {
           role: 'assistant',
           content: res.answer,
-          citations: res.citations,
+          citations: res.citations as Citation[],
           confidence: res.confidence,
         },
       ])
@@ -307,6 +385,13 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
   return (
     <GlobalStateContext.Provider
       value={{
+        token,
+        user,
+        authLoading,
+        login,
+        signup,
+        logout,
+
         conversations,
         activeId,
         activeQueries,
@@ -318,7 +403,11 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
         multiDoc,
         showCitations,
         
+        scrollPositions,
+        saveScrollPosition,
+
         newConversation,
+        deleteConv,
         setActiveId,
         setConversations,
         setSelectedDocs,
