@@ -38,18 +38,105 @@ export default function DocPreview() {
       })
   }, [filename])
 
+  const searchText = searchParams.get('text')
+
   useEffect(() => {
-    if (loading || !anchor || !htmlContent) return
-    // Wait a brief moment for the HTML content to render and the DOM to be ready
+    if (loading || !htmlContent) return
+
     const timer = setTimeout(() => {
-      const element = document.getElementById(anchor)
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        element.classList.add('highlight-section')
+      // 1. Excel sheet tab auto-activation
+      if (anchor && anchor.startsWith('sheet-')) {
+        const sheetId = anchor;
+        const container = document.getElementById(sheetId);
+        if (container) {
+          document.querySelectorAll('.sheet-container').forEach(el => el.classList.remove('active'));
+          document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+          
+          container.classList.add('active');
+          
+          const sheetName = anchor.replace('sheet-', '');
+          const tabBtn = Array.from(document.querySelectorAll('.tab-btn')).find(
+            btn => btn.textContent === sheetName
+          );
+          if (tabBtn) {
+            tabBtn.classList.add('active');
+          }
+        }
       }
-    }, 200)
-    return () => clearTimeout(timer)
-  }, [loading, anchor, htmlContent])
+
+      // 2. Perform text highlighting
+      let textHighlighted = false;
+      const targetText = searchText ? decodeURIComponent(searchText).trim() : '';
+
+      if (targetText) {
+        const searchScope = (anchor && anchor.startsWith('sheet-'))
+          ? document.getElementById(anchor)
+          : document.querySelector('.prose');
+
+        if (searchScope) {
+          const walker = document.createTreeWalker(searchScope, NodeFilter.SHOW_TEXT, null);
+          let currentNode = walker.nextNode();
+          
+          while (currentNode) {
+            const nodeText = currentNode.nodeValue || '';
+            const matchIndex = nodeText.toLowerCase().indexOf(targetText.toLowerCase());
+            if (matchIndex !== -1) {
+              const range = document.createRange();
+              range.setStart(currentNode, matchIndex);
+              range.setEnd(currentNode, matchIndex + targetText.length);
+              
+              const span = document.createElement('span');
+              span.className = 'highlight-section inline-block bg-purple-100 dark:bg-purple-900/50 border-l-4 border-purple-600 px-1.5 py-0.5 rounded';
+              span.style.scrollMargin = '100px';
+              
+              range.surroundContents(span);
+              span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              textHighlighted = true;
+              break;
+            }
+            currentNode = walker.nextNode();
+          }
+
+          if (!textHighlighted && targetText.length > 50) {
+            const subset = targetText.slice(0, 50).trim();
+            const walker2 = document.createTreeWalker(searchScope, NodeFilter.SHOW_TEXT, null);
+            let node2 = walker2.nextNode();
+            while (node2) {
+              const nodeText = node2.nodeValue || '';
+              const matchIndex = nodeText.toLowerCase().indexOf(subset.toLowerCase());
+              if (matchIndex !== -1) {
+                const range = document.createRange();
+                range.setStart(node2, matchIndex);
+                const highlightLength = Math.min(subset.length, nodeText.length - matchIndex);
+                range.setEnd(node2, matchIndex + highlightLength);
+                
+                const span = document.createElement('span');
+                span.className = 'highlight-section inline-block bg-purple-100 dark:bg-purple-900/50 border-l-4 border-purple-600 px-1.5 py-0.5 rounded';
+                span.style.scrollMargin = '100px';
+                
+                range.surroundContents(span);
+                span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                textHighlighted = true;
+                break;
+              }
+              node2 = walker2.nextNode();
+            }
+          }
+        }
+      }
+
+      // 3. Fallback standard element highlight/scroll
+      if (!textHighlighted && anchor) {
+        const element = document.getElementById(anchor);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          element.classList.add('highlight-section');
+        }
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [loading, anchor, htmlContent, searchText])
 
   return (
     <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-950 overflow-hidden text-gray-900 dark:text-white">
@@ -94,10 +181,31 @@ export default function DocPreview() {
         )}
 
         {!loading && !error && htmlContent && (
-          <div 
-            className="prose dark:prose-invert max-w-none"
-            dangerouslySetInnerHTML={{ __html: htmlContent }} 
-          />
+          <div className="relative">
+            <style>{`
+              .highlight-section {
+                background-color: #f3e8ff !important;
+                border-left: 4px solid #9333ea !important;
+                padding: 4px 8px;
+                border-radius: 0 4px 4px 0;
+                animation: pulse-highlight 2s ease-in-out;
+              }
+              .dark .highlight-section {
+                background-color: rgba(147, 51, 234, 0.2) !important;
+                border-left-color: #a855f7 !important;
+                color: #f3f4f6 !important;
+              }
+              @keyframes pulse-highlight {
+                0% { background-color: #f3e8ff; }
+                50% { background-color: #e9d5ff; }
+                100% { background-color: #f3e8ff; }
+              }
+            `}</style>
+            <div 
+              className="prose dark:prose-invert max-w-none"
+              dangerouslySetInnerHTML={{ __html: htmlContent }} 
+            />
+          </div>
         )}
       </main>
     </div>

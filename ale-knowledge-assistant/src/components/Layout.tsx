@@ -5,6 +5,7 @@ import {
   Settings, LogOut, Brain, Bell, Moon, Sun, Search
 } from 'lucide-react'
 import clsx from 'clsx'
+import { useGlobalState } from '../context/GlobalState'
 
 const NAV = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -23,6 +24,7 @@ interface LayoutProps {
 
 export default function Layout({ children, onLogout, dark, onToggleDark, user }: LayoutProps) {
   const navigate = useNavigate()
+  const { unreadCount } = useGlobalState()
 
   // Compute initials from full name
   const initials = user
@@ -124,7 +126,11 @@ export default function Layout({ children, onLogout, dark, onToggleDark, user }:
             className="w-8 h-8 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 relative"
           >
             <Bell size={15} />
-            <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-purple-500 rounded-full" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-purple-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-4 text-center leading-none">
+                {unreadCount}
+              </span>
+            )}
           </button>
           <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs font-medium cursor-pointer">
             {initials}

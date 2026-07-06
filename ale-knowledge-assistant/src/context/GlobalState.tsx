@@ -24,7 +24,7 @@ import type { Document, Citation } from '../api/client'
 import type { UploadFile, Message } from '../types'
 
 export interface ConversationEntry {
-  id: number
+  id: number | string
   title: string
   messages: Message[]
 }
@@ -38,8 +38,8 @@ interface GlobalStateContextType {
   logout: () => void
 
   conversations: ConversationEntry[]
-  activeId: number
-  activeQueries: Record<number, boolean>
+  activeId: number | string
+  activeQueries: Record<string | number, boolean>
   files: UploadFile[]
   documents: Document[]
   docsLoading: boolean
@@ -48,12 +48,12 @@ interface GlobalStateContextType {
   multiDoc: boolean
   showCitations: boolean
   
-  scrollPositions: Record<number, number>
-  saveScrollPosition: (id: number, top: number) => void
+  scrollPositions: Record<string | number, number>
+  saveScrollPosition: (id: string | number, top: number) => void
 
   newConversation: () => void
-  deleteConv: (convId: number) => Promise<void>
-  setActiveId: (id: number) => void
+  deleteConv: (convId: string | number) => Promise<void>
+  setActiveId: (id: string | number) => void
   setConversations: React.Dispatch<React.SetStateAction<ConversationEntry[]>>
   setSelectedDocs: React.Dispatch<React.SetStateAction<string[]>>
   setMultiDoc: (val: boolean) => void
@@ -91,14 +91,14 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
   const [authLoading, setAuthLoading] = useState(true)
 
   // --- Scroll State (to preserve position during background gen & navigation) ---
-  const [scrollPositions, setScrollPositions] = useState<Record<number, number>>({})
+  const [scrollPositions, setScrollPositions] = useState<Record<string | number, number>>({})
 
   // --- Chat & Conversations ---
   const [conversations, setConversations] = useState<ConversationEntry[]>([
     { id: 1, title: 'New conversation', messages: INITIAL }
   ])
-  const [activeId, setActiveId] = useState<number>(1)
-  const [activeQueries, setActiveQueries] = useState<Record<number, boolean>>({})
+  const [activeId, setActiveId] = useState<string | number>(1)
+  const [activeQueries, setActiveQueries] = useState<Record<string | number, boolean>>({})
   const [selectedDocs, setSelectedDocs] = useState<string[]>([])
 
   // --- Uploads queue ---
@@ -108,6 +108,10 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
   const [documents, setDocuments] = useState<Document[]>([])
   const [docsLoading, setDocsLoading] = useState(false)
   const [docsError, setDocsError] = useState<string | null>(null)
+
+  // --- Notifications State ---
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [unreadCount, setUnreadCount] = useState<number>(0)
 
   // --- Search Preferences ---
   const [multiDoc, setMultiDocState] = useState<boolean>(() => {
@@ -129,7 +133,7 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
     localStorage.setItem('ale_pref_citations', String(val))
   }
 
-  const saveScrollPosition = useCallback((id: number, top: number) => {
+  const saveScrollPosition = useCallback((id: string | number, top: number) => {
     setScrollPositions(prev => ({ ...prev, [id]: top }))
   }, [])
 
@@ -153,6 +157,73 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
     setActiveId(1)
     setDocuments([])
     setScrollPositions({})
+    setNotifications([])
+    setUnreadCount(0)
+  }
+
+  // --- User Profile Update ---
+  const updateUser = (updatedUser: AuthUser, newToken?: string) => {
+    setUser(updatedUser)
+    if (newToken) {
+      localStorage.setItem(TOKEN_KEY, newToken)
+      setToken(newToken)
+    }
+  }
+
+  // --- Notification Handlers ---
+  const fetchNotifications = useCallback(async () => {
+    if (!token) return
+    try {
+      const items = await getNotifications()
+      setNotifications(items)
+      const countRes = await getUnreadCount()
+      setUnreadCount(countRes.count)
+    } catch (e) {
+      console.error('Failed to fetch notifications:', e)
+    }
+  }, [token])
+
+  const markNotifAsRead = async (id: number) => {
+    try {
+      await markAsRead(id)
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n))
+      setUnreadCount(prev => Math.max(0, prev - 1))
+    } catch (e) {
+      console.error('Failed to mark notification as read:', e)
+    }
+  }
+
+  const markAllNotifsAsRead = async () => {
+    try {
+      await markAllAsRead()
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+      setUnreadCount(0)
+    } catch (e) {
+      console.error('Failed to mark all notifications as read:', e)
+    }
+  }
+
+  const deleteNotif = async (id: number) => {
+    try {
+      await deleteNotification(id)
+      const target = notifications.find(n => n.id === id)
+      if (target && !target.is_read) {
+        setUnreadCount(prev => Math.max(0, prev - 1))
+      }
+      setNotifications(prev => prev.filter(n => n.id !== id))
+    } catch (e) {
+      console.error('Failed to delete notification:', e)
+    }
+  }
+
+  const deleteAllNotifs = async () => {
+    try {
+      await deleteAllNotifications()
+      setNotifications([])
+      setUnreadCount(0)
+    } catch (e) {
+      console.error('Failed to delete all notifications:', e)
+    }
   }
 
   // --- Re-load user data on login or session load ---
@@ -188,6 +259,7 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
           const profile = await getProfile()
           setUser(profile)
           await loadUserData()
+          await fetchNotifications()
         } catch {
           localStorage.removeItem(TOKEN_KEY)
           setToken(null)
@@ -197,7 +269,7 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
       setAuthLoading(false)
     }
     initUser()
-  }, [token, loadUserData])
+  }, [token, loadUserData, fetchNotifications])
 
   // --- Load Indexed Documents Cache ---
   const refreshDocuments = useCallback(async () => {
@@ -250,11 +322,12 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
 
       if (anyStatusChanged) {
         refreshDocuments().catch(err => console.error(err))
+        fetchNotifications().catch(err => console.error(err))
       }
     }, 1500)
 
     return () => clearInterval(id)
-  }, [files, token, refreshDocuments])
+  }, [files, token, refreshDocuments, fetchNotifications])
 
   // --- Handlers ---
   const newConversation = () => {
@@ -263,7 +336,7 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
     setActiveId(id)
   }
 
-  const deleteConv = async (convId: number) => {
+  const deleteConv = async (convId: number | string) => {
     setConversations(prev => prev.filter(c => c.id !== convId))
     if (activeId === convId) {
       const remaining = conversations.filter(c => c.id !== convId)
@@ -348,7 +421,7 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
     }
   }
 
-  const updateMessages = (id: number, updater: (msgs: Message[]) => Message[]) => {
+  const updateMessages = (id: number | string, updater: (msgs: Message[]) => Message[]) => {
     setConversations(prev =>
       prev.map(c => (c.id === id ? { ...c, messages: updater(c.messages) } : c))
     )
@@ -381,6 +454,7 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
           confidence: res.confidence,
         },
       ])
+      await fetchNotifications()
     } catch (e: any) {
       updateMessages(currentActiveId, msgs => [
         ...msgs,
@@ -435,7 +509,16 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
         removeUploadFile,
         sendChatQuery,
         deleteDoc,
-        refreshDocuments
+        refreshDocuments,
+
+        notifications,
+        unreadCount,
+        fetchNotifications,
+        markNotifAsRead,
+        markAllNotifsAsRead,
+        deleteNotif,
+        deleteAllNotifs,
+        updateUser
       }}
     >
       {children}

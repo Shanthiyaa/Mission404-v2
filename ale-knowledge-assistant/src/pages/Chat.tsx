@@ -1,54 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
-import { Bot, Send, Plus, FileText, AlertCircle, ExternalLink, Filter } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { Bot, Send, Plus, FileText, AlertCircle, ExternalLink, Filter, ArrowDown } from 'lucide-react'
 import clsx from 'clsx'
 import { useGlobalState } from '../context/GlobalState'
 import type { Message } from '../types'
-
-// Dynamic suggestion generation based on recent user messages
-function generateDynamicSuggestions(messages: Message[], selectedDocs: string[]): string[] {
-  // Gather recent user messages (up to last 3) for context
-  const recentMsgs = messages
-    .filter(m => m.role === 'user')
-    .slice(-3)
-    .map(m => m.content)
-    .join(' ');
-
-  // Include document titles as context
-  const docContext = selectedDocs.join(' ');
-
-  const combined = `${recentMsgs} ${docContext}`.trim();
-
-  if (!combined) return [];
-
-  // Simple keyword extraction: non‑stopwords, words length >=4
-  const stopwords = new Set([
-    'the', 'and', 'for', 'with', 'that', 'this', 'you', 'your',
-    'have', 'can', 'are', 'was', 'is', 'to', 'of', 'in',
-    'on', 'it', 'as', 'at', 'by', 'from'
-  ]);
-  const words = combined.toLowerCase().match(/\b\w{4,}\b/g) ?? [];
-  const freq: Record<string, number> = {};
-  words.forEach(w => {
-    if (!stopwords.has(w)) {
-      freq[w] = (freq[w] ?? 0) + 1;
-    }
-  });
-
-  const topKeywords = Object.entries(freq)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([kw]) => kw);
-
-  if (topKeywords.length === 0) return [];
-
-  const suggestions = topKeywords.flatMap(k => [
-    `Can you tell me more about "${k}"?`,
-    `What are the challenges related to "${k}"?`,
-    `How does "${k}" affect the overall context?`,
-  ]);
-
-  return suggestions.slice(0, 3);
-}
 
 
 const INITIAL: Message[] = [
@@ -89,18 +44,22 @@ function GroupedFileSourceCard({ filename, citations }: GroupedFileSourceCardPro
         {citations.map((cite, ci) => {
           const ext = cite.source_file.split('.').pop()?.toLowerCase()
           let linkUrl = ''
+          const textParam = cite.text ? `&text=${encodeURIComponent(cite.text)}` : ''
           if (ext === 'pdf') {
             const anchor = cite.pdf_anchor ?? ("#page=" + cite.page)
             linkUrl = "/api/documents/" + encodeURIComponent(cite.source_file) + "/view" + anchor
           } else if (ext === 'pptx') {
-            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&anchor=slide-${cite.slide || cite.page}`
+            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&anchor=slide-${cite.slide || cite.page}${textParam}`
           } else if (ext === 'docx') {
             const slugify = (text: string) => {
               return "heading-" + text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
             }
-            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&anchor=${slugify(cite.section)}`
+            const anchorVal = cite.section ? slugify(cite.section) : 'docx'
+            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&anchor=${anchorVal}${textParam}`
           } else if (ext === 'xlsx') {
-            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&anchor=sheet-${cite.worksheet || ''}`
+            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&anchor=sheet-${cite.worksheet || ''}${textParam}`
+          } else if (ext === 'txt') {
+            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&anchor=txt${textParam}`
           } else {
             linkUrl = `/api/documents/${encodeURIComponent(cite.source_file)}/view`
           }
@@ -348,12 +307,18 @@ export default function Chat() {
     sendChatQuery
   } = useGlobalState()
 
+  const [searchParams, setSearchParams] = useSearchParams()
+  const queryId = searchParams.get('id')
+
   const [input, setInput] = useState('')
   const [sessionId] = useState(() => Math.random().toString(36).slice(2))
   const [docSelectionError, setDocSelectionError] = useState<string | null>(null)
+  const [showScrollBottom, setShowScrollBottom] = useState(false)
   
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const { scrollPositions, saveScrollPosition } = useGlobalState()
 
   const activeConv = conversations.find(c => c.id === activeId) ?? conversations[0]
   const messages = activeConv?.messages ?? INITIAL
@@ -361,17 +326,65 @@ export default function Chat() {
 
   const availableDocs = documents.filter(d => d.status === 'Indexed')
 
+  // Handle conversation navigation via URL parameter (e.g. from notification)
+  useEffect(() => {
+    if (queryId) {
+      const idNum = Number(queryId)
+      const targetId = isNaN(idNum) ? queryId : idNum
+      if (conversations.some(c => c.id === targetId)) {
+        setActiveId(targetId)
+      }
+      // Clear query parameter so it doesn't persist on navigations
+      setSearchParams({}, { replace: true })
+    }
+  }, [queryId, conversations, setActiveId, setSearchParams])
+
   const scrollToBottom = () => {
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
     }
   }
 
+  const scrollToBottomSmooth = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({
+        top: scrollContainerRef.current.scrollHeight,
+        behavior: 'smooth'
+      })
+    }
+  }
+
+  const handleScroll = () => {
+    const container = scrollContainerRef.current
+    if (container) {
+      saveScrollPosition(activeId, container.scrollTop)
+      const isNearBottom = container.scrollHeight - container.clientHeight - container.scrollTop < 150
+      setShowScrollBottom(!isNearBottom)
+    }
+  }
+
+  // Restore scroll position on conversation switch or mount
+  const lastActiveIdRef = useRef<string | number | null>(null)
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const savedPos = scrollPositions[activeId]
+    if (savedPos !== undefined) {
+      container.scrollTop = savedPos
+    } else {
+      container.scrollTop = container.scrollHeight
+    }
+    lastActiveIdRef.current = activeId
+  }, [activeId, scrollPositions])
+
   // ChatGPT-style scrolling: auto-scroll only if already at the bottom or loading starts
   const prevLoadingRef = useRef(loading)
   useEffect(() => {
     const container = scrollContainerRef.current
     if (!container) return
+
+    if (lastActiveIdRef.current !== activeId) return
 
     const isAtBottom = container.scrollHeight - container.clientHeight - container.scrollTop < 120
 
@@ -387,7 +400,7 @@ export default function Chat() {
       }
     }
     prevLoadingRef.current = loading
-  }, [messages, loading])
+  }, [messages, loading, activeId])
 
   const send = async (text: string) => {
     if (!text.trim() || loading) return
@@ -529,7 +542,7 @@ export default function Chat() {
         </div>
 
         {/* Chat window */}
-        <div className="flex-1 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl flex flex-col overflow-hidden">
+        <div className="flex-1 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl flex flex-col overflow-hidden relative">
           <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
             <div className="w-7 h-7 bg-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
               <Bot size={14} className="text-white" />
@@ -544,7 +557,7 @@ export default function Chat() {
           </div>
 
           {/* Messages */}
-          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 space-y-4">
             {messages.map((m, i) => (
               <div key={i} className={clsx('flex gap-2.5 items-start', m.role === 'user' && 'flex-row-reverse')}>
                 <div className={clsx(
@@ -624,20 +637,19 @@ export default function Chat() {
             )}
           </div>
 
+          {/* Floating Scroll to Bottom button */}
+          {showScrollBottom && (
+            <button
+              onClick={scrollToBottomSmooth}
+              className="absolute bottom-20 right-6 w-9 h-9 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 shadow-md hover:shadow-lg transition-all z-20 cursor-pointer"
+              title="Scroll to bottom"
+            >
+              <ArrowDown size={16} />
+            </button>
+          )}
+
           {/* Input area */}
           <div className="p-3 border-t border-gray-100 dark:border-gray-800">
-            <div className="flex gap-2 mb-2 flex-wrap">
-              {generateDynamicSuggestions(messages, selectedDocs).map(s => (
-                <button
-                  key={s}
-                  onClick={() => send(s)}
-                  disabled={loading}
-                  className="text-xs px-3 py-1 rounded-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-40"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
             <div className="flex gap-2 items-end">
               <textarea
                 ref={textareaRef}
