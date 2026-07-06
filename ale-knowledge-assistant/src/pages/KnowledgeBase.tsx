@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Search, Trash2, FileText, RefreshCw, AlertCircle, Loader } from 'lucide-react'
 import clsx from 'clsx'
-import { useDocuments } from '../hooks/useDocuments'
+import { useGlobalState } from '../context/GlobalState'
 
 const FILTERS = ['All', 'User guide', 'Release notes', 'SQA', 'KCS']
 
@@ -23,7 +23,7 @@ const CAT_LABEL: Record<string, string> = {
 }
 
 export default function KnowledgeBase() {
-  const { documents, loading, error, refresh, remove } = useDocuments()
+  const { documents, docsLoading: loading, docsError: error, refreshDocuments: refresh, deleteDoc: remove } = useGlobalState()
   const [searchParams]          = useSearchParams()
   const [filter, setFilter]     = useState('All')
   const [search, setSearch]     = useState(searchParams.get('q') || '')
@@ -34,6 +34,20 @@ export default function KnowledgeBase() {
     const q = searchParams.get('q')
     if (q !== null) setSearch(q)
   }, [searchParams])
+
+  const highlightId = searchParams.get('highlight')
+
+  useEffect(() => {
+    if (highlightId && documents.length > 0) {
+      const timer = setTimeout(() => {
+        const el = document.getElementById(`doc-row-${highlightId}`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 300)
+      return () => clearTimeout(timer)
+    }
+  }, [highlightId, documents])
 
   const filtered = documents.filter(d => {
     const catLabel = CAT_LABEL[d.category] || d.category
@@ -145,7 +159,11 @@ export default function KnowledgeBase() {
               {filtered.map(d => (
                 <tr
                   key={d.id}
-                  className="border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 last:border-0"
+                  id={`doc-row-${d.id}`}
+                  className={clsx(
+                    'border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 last:border-0 transition-colors duration-1000',
+                    d.id === highlightId && 'bg-purple-50/50 dark:bg-purple-900/20 border-l-4 border-l-purple-600'
+                  )}
                 >
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2.5">

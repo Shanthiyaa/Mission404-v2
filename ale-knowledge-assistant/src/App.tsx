@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
@@ -8,78 +8,32 @@ import Chat from './pages/Chat'
 import Upload from './pages/Upload'
 import KnowledgeBase from './pages/KnowledgeBase'
 import Settings from './pages/Settings'
+import Notification from './pages/Notification'
+import DocPreview from './pages/DocPreview'
+import { GlobalStateProvider, useGlobalState } from './context/GlobalState'
 
-interface UserInfo {
-  name: string
-  email: string
-  department: string
-}
+function AppContent({ dark, toggleDark }: { dark: boolean; toggleDark: () => void }) {
+  const { token, user, authLoading, logout } = useGlobalState()
 
-const USER_STORAGE_KEY = 'ale_user'
-const CHAT_STORAGE_KEY = 'ale_chat_state'
-
-export default function App() {
-  const [dark, setDark] = useState(false)
-  const [authed, setAuthed] = useState(false)
-  const [user, setUser] = useState<UserInfo | null>(null)
-  const [checkingAuth, setCheckingAuth] = useState(true)
-
-  // Rehydrate session from localStorage on first load (fixes refresh -> login redirect)
-  useEffect(() => {
-    const stored = localStorage.getItem(USER_STORAGE_KEY)
-    if (stored) {
-      try {
-        const parsedUser: UserInfo = JSON.parse(stored)
-        setUser(parsedUser)
-        setAuthed(true)
-      } catch {
-        localStorage.removeItem(USER_STORAGE_KEY)
-      }
-    }
-    setCheckingAuth(false)
-  }, [])
-
-  const toggleDark = () => {
-    setDark(d => !d)
-    document.documentElement.classList.toggle('dark')
-  }
-
-  const handleLogin = (u: UserInfo) => {
-    setUser(u)
-    setAuthed(true)
-    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(u))
-  }
-
-  const handleLogout = () => {
-    setUser(null)
-    setAuthed(false)
-    localStorage.removeItem(USER_STORAGE_KEY)
-    localStorage.removeItem(CHAT_STORAGE_KEY) // clear chat history on sign-out
-  }
-
-  // Wait until we've checked localStorage before deciding to redirect
-  if (checkingAuth) {
+  if (authLoading) {
     return null
   }
 
-  if (!authed) {
+  if (!token || !user) {
     return (
-      <BrowserRouter>
-        <div className={dark ? 'dark' : ''}>
-          <Routes>
-            <Route path="/login" element={<Login onLogin={handleLogin} onToggleDark={toggleDark} />} />
-            <Route path="/signup" element={<Signup onLogin={handleLogin} />} />
-            <Route path="*" element={<Navigate to="/login" replace />} />
-          </Routes>
-        </div>
-      </BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<Login onToggleDark={toggleDark} />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
     )
   }
 
   return (
-    <BrowserRouter>
-      <div className={dark ? 'dark' : ''}>
-        <Layout onLogout={handleLogout} dark={dark} onToggleDark={toggleDark} user={user}>
+    <Routes>
+      <Route path="/preview" element={<DocPreview />} />
+      <Route path="*" element={
+        <Layout onLogout={logout} dark={dark} onToggleDark={toggleDark} user={user}>
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
@@ -87,10 +41,30 @@ export default function App() {
             <Route path="/upload" element={<Upload />} />
             <Route path="/knowledge-base" element={<KnowledgeBase />} />
             <Route path="/settings" element={<Settings dark={dark} onToggleDark={toggleDark} user={user} />} />
+            <Route path="/notifications" element={<Notification />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </Layout>
-      </div>
-    </BrowserRouter>
+      } />
+    </Routes>
+  )
+}
+
+export default function App() {
+  const [dark, setDark] = useState(false)
+
+  const toggleDark = () => {
+    setDark(d => !d)
+    document.documentElement.classList.toggle('dark')
+  }
+
+  return (
+    <GlobalStateProvider>
+      <BrowserRouter>
+        <div className={dark ? 'dark' : ''}>
+          <AppContent dark={dark} toggleDark={toggleDark} />
+        </div>
+      </BrowserRouter>
+    </GlobalStateProvider>
   )
 }

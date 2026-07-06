@@ -1,15 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
-import { Bot, Send, Plus, FileText, AlertCircle, ExternalLink, Filter } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { Bot, Send, Plus, FileText, AlertCircle, ExternalLink, Filter, ArrowDown } from 'lucide-react'
 import clsx from 'clsx'
-import { queryDocuments, listDocuments } from '../api/client'
+import { useGlobalState } from '../context/GlobalState'
 import type { Message } from '../types'
-import type { Document } from '../api/client'
 
-const SUGGESTIONS = [
-  'What changed in the latest release?',
-  'How to configure BGP peer?',
-  'What is the OSPF hello timer?',
-]
 
 const INITIAL: Message[] = [
   {
@@ -30,7 +25,6 @@ interface GroupedFileSourceCardProps {
   filename: string
   citations: any[]
 }
-
 function GroupedFileSourceCard({ filename, citations }: GroupedFileSourceCardProps) {
   return (
     <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-3">
@@ -48,20 +42,39 @@ function GroupedFileSourceCard({ filename, citations }: GroupedFileSourceCardPro
       {/* Findings list */}
       <div className="space-y-3">
         {citations.map((cite, ci) => {
-          const anchor = cite.pdf_anchor ?? ("#page=" + cite.page)
-          const pdfUrl = "/api/documents/" + encodeURIComponent(cite.source_file) + "/view" + anchor
+          const ext = cite.source_file.split('.').pop()?.toLowerCase()
+          let linkUrl = ''
+          const textParam = cite.text ? `&text=${encodeURIComponent(cite.text)}` : ''
+          if (ext === 'pdf') {
+            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&page=${cite.page || 1}`
+          } else if (ext === 'pptx') {
+            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&anchor=slide-${cite.slide || cite.page}${textParam}`
+          } else if (ext === 'docx') {
+            const slugify = (text: string) => {
+              return "heading-" + text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+            }
+            const anchorVal = cite.section ? slugify(cite.section) : 'docx'
+            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&anchor=${anchorVal}${textParam}`
+          } else if (ext === 'xlsx') {
+            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&anchor=sheet-${cite.worksheet || ''}${textParam}`
+          } else if (ext === 'txt') {
+            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&anchor=txt${textParam}`
+          } else {
+            linkUrl = `/api/documents/${encodeURIComponent(cite.source_file)}/view`
+          }
+
           return (
-            <div key={ci} className="text-xs border-b border-gray-50 dark:border-gray-850 last:border-b-0 pb-2 last:pb-0">
+            <div key={ci} className="text-xs border-b border-gray-50 dark:border-gray-855 last:border-b-0 pb-2 last:pb-0">
               <div className="flex items-center justify-between text-gray-400 dark:text-gray-500 font-medium mb-1">
                 <span>
-                  Page {cite.page} {cite.section ? `· Section: ${cite.section}` : ''}
+                  {ext === 'pptx' ? `Slide ${cite.slide || cite.page}` : ext === 'xlsx' ? `Worksheet: ${cite.worksheet || 'Sheet1'}` : `Page ${cite.page}`} {cite.section ? `· Section: ${cite.section}` : ''}
                 </span>
                 <a
-                  href={pdfUrl}
+                  href={linkUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-0.5 text-purple-500 hover:text-purple-700 transition-colors font-semibold"
-                  title={`Open ${cite.source_file} at page ${cite.page}`}
+                  title={`Open ${cite.source_file}`}
                 >
                   Go to source <ExternalLink size={10} />
                 </a>
@@ -278,101 +291,220 @@ function loadPersistedChat(): { conversations: ConversationEntry[]; activeId: nu
 }
 
 export default function Chat() {
-  const [conversations, setConversations] = useState<ConversationEntry[]>(
-    () => loadPersistedChat().conversations
-  )
-  const [activeId, setActiveId] = useState<number>(
-    () => loadPersistedChat().activeId
-  )
-  const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [sessionId] = useState(() => Math.random().toString(36).slice(2))
-  const bottomRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const {
+    conversations,
+    activeId,
+    activeQueries,
+    documents,
+    selectedDocs,
+    multiDoc,
+    showCitations,
+    newConversation,
+    setActiveId,
+    setSelectedDocs,
+    setConversations,
+    sendChatQuery
+  } = useGlobalState()
 
-  const [availableDocs, setAvailableDocs] = useState<Document[]>([])
-  const [selectedDocs, setSelectedDocs] = useState<string[]>([])
+  const [searchParams, setSearchParams] = useSearchParams()
+  const queryId = searchParams.get('id')
+  const msgIdToScrollRef = useRef<string | null>(searchParams.get('msgId'))
+
+  const [input, setInput] = useState('')
+  const [sessionId] = useState(() => Math.random().toString(36).slice(2))
+  const [docSelectionError, setDocSelectionError] = useState<string | null>(null)
+  const [showScrollBottom, setShowScrollBottom] = useState(false)
+  const [showQnNav, setShowQnNav] = useState(false)
+  
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const scrollbarClickRef = useRef(false)
+  const scrollTopOnDownRef = useRef(0)
+
+  const { scrollPositions, saveScrollPosition } = useGlobalState()
 
   const activeConv = conversations.find(c => c.id === activeId) ?? conversations[0]
   const messages = activeConv?.messages ?? INITIAL
+  const loading = !!activeQueries[activeId]
 
-  useEffect(() => {
-    listDocuments()
-      .then(docs => {
-        setAvailableDocs(docs.filter(d => d.status === 'Indexed'))
-      })
-      .catch(err => console.error('Failed to load documents', err))
-  }, [])
+  const availableDocs = documents.filter(d => d.status === 'Indexed')
 
+  // Handle conversation navigation via URL parameter (e.g. from notification)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, loading])
-
-  // Persist conversations + activeId whenever they change (survives nav + refresh)
-  useEffect(() => {
-    try {
-      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify({ conversations, activeId }))
-    } catch (err) {
-      console.error('Failed to persist chat state', err)
+    if (queryId) {
+      const idNum = Number(queryId)
+      const targetId = isNaN(idNum) ? queryId : idNum
+      if (conversations.some(c => c.id === targetId)) {
+        setActiveId(targetId)
+      }
+      
+      const msgId = searchParams.get('msgId')
+      if (msgId) {
+        msgIdToScrollRef.current = msgId
+      } else {
+        setSearchParams({}, { replace: true })
+      }
     }
-  }, [conversations, activeId])
+  }, [queryId, conversations, setActiveId, setSearchParams])
 
-  const updateMessages = (id: number, updater: (msgs: Message[]) => Message[]) => {
-    setConversations(prev =>
-      prev.map(c => c.id === id ? { ...c, messages: updater(c.messages) } : c)
-    )
+  // Handle scrolling to and highlighting specific target messages (from notifications)
+  useEffect(() => {
+    if (msgIdToScrollRef.current && !loading && messages.length > 0) {
+      const targetMsgId = msgIdToScrollRef.current
+      const timer = setTimeout(() => {
+        const el = document.getElementById(`msg-${targetMsgId}`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          el.classList.add('highlight-message')
+          setTimeout(() => {
+            el.classList.remove('highlight-message')
+          }, 3500)
+          msgIdToScrollRef.current = null
+          setSearchParams({}, { replace: true })
+        }
+      }, 300)
+      return () => clearTimeout(timer)
+    }
+  }, [messages, loading, setSearchParams])
+
+  const scrollToBottom = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
+    }
   }
+
+  const scrollToBottomSmooth = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
+    }
+  }
+
+  const handleScroll = () => {
+    const container = scrollContainerRef.current
+    if (container) {
+      saveScrollPosition(activeId, container.scrollTop)
+      const isNearBottom = container.scrollHeight - container.clientHeight - container.scrollTop < 150
+      setShowScrollBottom(!isNearBottom)
+    }
+  }
+
+  // --- Scrollbar Click Question Navigator ---
+  const handleScrollAreaMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    const rect = container.getBoundingClientRect()
+    // clientWidth excludes scrollbar, so clicks beyond it are on the scrollbar
+    if (e.clientX >= rect.left + container.clientWidth) {
+      scrollbarClickRef.current = true
+      scrollTopOnDownRef.current = container.scrollTop
+    } else {
+      scrollbarClickRef.current = false
+      setShowQnNav(false)
+    }
+  }
+
+  const handleScrollAreaMouseUp = () => {
+    if (!scrollbarClickRef.current) return
+    scrollbarClickRef.current = false
+    const container = scrollContainerRef.current
+    if (!container) return
+    const scrollDiff = Math.abs(container.scrollTop - scrollTopOnDownRef.current)
+    if (scrollDiff < 5) {
+      // Click without drag → toggle question navigator
+      setShowQnNav(prev => !prev)
+    }
+  }
+
+  const userQuestions = messages
+    .map((m, idx) => ({ text: m.content, role: m.role, id: m.id, idx }))
+    .filter(q => q.role === 'user')
+    .map(q => ({
+      text: q.text,
+      elementId: q.id ? `msg-${q.id}` : `msg-idx-${q.idx}`
+    }))
+
+  const jumpToQuestion = (elementId: string) => {
+    setShowQnNav(false)
+    setTimeout(() => {
+      const container = scrollContainerRef.current
+      const el = document.getElementById(elementId)
+      if (container && el) {
+        container.scrollTop = Math.max(0, el.offsetTop - 60)
+        el.classList.add('highlight-message')
+        setTimeout(() => el.classList.remove('highlight-message'), 3500)
+      }
+    }, 100)
+  }
+
+  // Restore scroll position on conversation switch or mount
+  const lastActiveIdRef = useRef<string | number | null>(null)
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const savedPos = scrollPositions[activeId]
+    if (savedPos !== undefined) {
+      container.scrollTop = savedPos
+    } else {
+      container.scrollTop = container.scrollHeight
+    }
+    lastActiveIdRef.current = activeId
+  }, [activeId, scrollPositions])
+
+  // ChatGPT-style scrolling: auto-scroll only if already at the bottom or loading starts
+  const prevLoadingRef = useRef(loading)
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    if (lastActiveIdRef.current !== activeId) return
+
+    const isAtBottom = container.scrollHeight - container.clientHeight - container.scrollTop < 120
+
+    if (loading && !prevLoadingRef.current) {
+      scrollToBottom()
+    } else if (!loading && prevLoadingRef.current) {
+      if (isAtBottom) {
+        scrollToBottom()
+      }
+    } else {
+      if (isAtBottom) {
+        scrollToBottom()
+      }
+    }
+    prevLoadingRef.current = loading
+  }, [messages, loading, activeId])
 
   const send = async (text: string) => {
     if (!text.trim() || loading) return
     const q = text.trim()
-    setInput('')
 
-    updateMessages(activeId, msgs => [...msgs, { role: 'user', content: q }])
-    setLoading(true)
-
-    if (activeConv.title === 'New conversation') {
+    // REQUIRE DOCUMENT SELECTION VALIDATION
+    if (selectedDocs.length === 0) {
       setConversations(prev =>
-        prev.map(c => c.id === activeId
-          ? { ...c, title: q.length > 40 ? q.slice(0, 40) + '…' : q }
-          : c
+        prev.map(c =>
+          c.id === activeId
+            ? {
+                ...c,
+                messages: [
+                  ...c.messages,
+                  { role: 'user', content: q },
+                  {
+                    role: 'assistant',
+                    content: "Please select at least one document before asking a question.",
+                    error: true
+                  }
+                ]
+              }
+            : c
         )
       )
+      setInput('')
+      return
     }
 
-    try {
-      const res = await queryDocuments(q, sessionId, undefined, selectedDocs)
-      updateMessages(activeId, msgs => [
-        ...msgs,
-        {
-          role: 'assistant',
-          content: res.answer,
-          citations: res.citations,
-          confidence: res.confidence,
-        },
-      ])
-    } catch (e: any) {
-      updateMessages(activeId, msgs => [
-        ...msgs,
-        {
-          role: 'assistant',
-          content: e.message?.includes('No documents')
-            ? 'No documents have been indexed yet. Please upload a PDF first.'
-            : e.message?.includes('LLM unavailable')
-              ? 'The Ollama LLM is not reachable. Make sure Ollama is running: `ollama serve`'
-              : 'Something went wrong: ' + e.message,
-          error: true,
-        },
-      ])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const newConversation = () => {
-    const id = Date.now()
-    setConversations(prev => [...prev, { id, title: 'New conversation', messages: INITIAL }])
-    setActiveId(id)
+    setInput('')
+    await sendChatQuery(q, sessionId)
   }
 
   return (
@@ -424,7 +556,7 @@ export default function Chat() {
               </div>
               {selectedDocs.length > 0 && (
                 <button
-                  onClick={() => setSelectedDocs([])}
+                  onClick={() => { setSelectedDocs([]); setDocSelectionError(null); }}
                   className="text-[10px] text-purple-600 hover:text-purple-700 font-medium"
                 >
                   Clear Filter
@@ -448,10 +580,15 @@ export default function Chat() {
                         type="checkbox"
                         checked={isChecked}
                         onChange={() => {
+                          if (!multiDoc && !isChecked && selectedDocs.length >= 1) {
+                            setDocSelectionError("Multi-document search is disabled in settings. You may select only one document.")
+                            return
+                          }
+                          setDocSelectionError(null)
                           setSelectedDocs(prev =>
                             isChecked
                               ? prev.filter(name => name !== doc.name)
-                              : [...prev, doc.name]
+                              : (multiDoc ? [...prev, doc.name] : [doc.name])
                           )
                         }}
                         className="mt-0.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
@@ -464,7 +601,12 @@ export default function Chat() {
                 })}
               </div>
             )}
-            {selectedDocs.length > 0 && (
+            {docSelectionError && (
+              <div className="text-[10px] text-red-500 font-medium mt-1">
+                {docSelectionError}
+              </div>
+            )}
+            {selectedDocs.length > 0 && !docSelectionError && (
               <div className="text-[10px] text-purple-600 dark:text-purple-400 font-medium mt-1.5 pt-1.5 border-t border-gray-100 dark:border-gray-800/40">
                 Searching {selectedDocs.length} selected document{selectedDocs.length > 1 ? 's' : ''}
               </div>
@@ -473,7 +615,7 @@ export default function Chat() {
         </div>
 
         {/* Chat window */}
-        <div className="flex-1 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl flex flex-col overflow-hidden">
+        <div className="flex-1 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl flex flex-col overflow-hidden relative">
           <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
             <div className="w-7 h-7 bg-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
               <Bot size={14} className="text-white" />
@@ -488,9 +630,19 @@ export default function Chat() {
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            onMouseDown={handleScrollAreaMouseDown}
+            onMouseUp={handleScrollAreaMouseUp}
+            className="flex-1 overflow-y-auto p-4 space-y-4"
+          >
             {messages.map((m, i) => (
-              <div key={i} className={clsx('flex gap-2.5 items-start', m.role === 'user' && 'flex-row-reverse')}>
+              <div 
+                key={i} 
+                id={m.id ? `msg-${m.id}` : `msg-idx-${i}`}
+                className={clsx('flex gap-2.5 items-start transition-all', m.role === 'user' && 'flex-row-reverse')}
+              >
                 <div className={clsx(
                   'w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0 mt-0.5',
                   m.role === 'assistant'
@@ -521,7 +673,7 @@ export default function Chat() {
                   )}
 
                   {/* Citations */}
-                  {m.citations && m.citations.length > 0 && (() => {
+                  {showCitations && m.citations && m.citations.length > 0 && (() => {
                     // Group citations by source_file
                     const groups: { [filename: string]: any[] } = {}
                     m.citations.forEach(c => {
@@ -566,23 +718,52 @@ export default function Chat() {
                 </div>
               </div>
             )}
-            <div ref={bottomRef} />
           </div>
+
+          {/* Floating Scroll to Bottom button */}
+          {showScrollBottom && (
+            <button
+              onClick={scrollToBottomSmooth}
+              className="absolute bottom-20 right-6 w-9 h-9 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 shadow-md hover:shadow-lg transition-all z-20 cursor-pointer"
+              title="Scroll to bottom"
+            >
+              <ArrowDown size={16} />
+            </button>
+          )}
+
+          {/* Question Navigator Popup */}
+          {showQnNav && (
+            <div className="absolute top-14 right-4 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-30 overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 dark:border-gray-700">
+                <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Questions in Chat</span>
+                <button
+                  onClick={() => setShowQnNav(false)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs font-bold leading-none"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="max-h-48 overflow-y-auto p-2 space-y-1">
+                {userQuestions.length === 0 ? (
+                  <div className="text-[11px] text-gray-400 italic px-1">No questions asked yet.</div>
+                ) : (
+                  userQuestions.map((q, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => jumpToQuestion(q.elementId)}
+                      className="w-full text-left text-xs text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded px-2 py-1.5 truncate block font-medium transition-colors"
+                      title={q.text}
+                    >
+                      {idx + 1}. {q.text}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Input area */}
           <div className="p-3 border-t border-gray-100 dark:border-gray-800">
-            <div className="flex gap-2 mb-2 flex-wrap">
-              {SUGGESTIONS.map(s => (
-                <button
-                  key={s}
-                  onClick={() => send(s)}
-                  disabled={loading}
-                  className="text-xs px-3 py-1 rounded-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-40"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
             <div className="flex gap-2 items-end">
               <textarea
                 ref={textareaRef}

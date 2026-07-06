@@ -5,8 +5,9 @@ import {
   Shield, ChevronRight, Eye, EyeOff, ArrowRight,
   CheckCircle2, Users, Database, Clock
 } from 'lucide-react'
+import { useGlobalState } from '../context/GlobalState'
 
-interface LoginProps { onLogin: (user: { name: string; email: string; department: string }) => void; onToggleDark: () => void }
+interface LoginProps { onToggleDark: () => void }
 
 type AuthMode = 'login' | 'forgot'
 
@@ -36,11 +37,11 @@ const FEATURES = [
 const STATS = [
   { value: '10x', label: 'Faster than manual search', icon: Zap },
   { value: '95%', label: 'Answer accuracy rate', icon: CheckCircle2 },
-  { value: '<2s', label: 'Average response time', icon: Clock },
   { value: '100+', label: 'Document formats supported', icon: Database },
 ]
 
-export default function Login({ onLogin }: LoginProps) {
+export default function Login({ onToggleDark }: LoginProps) {
+  const { login, signup } = useGlobalState()
   const [mode, setMode]           = useState<AuthMode>('login')
   const [email, setEmail]         = useState('')
   const [password, setPassword]   = useState('')
@@ -71,31 +72,14 @@ export default function Login({ onLogin }: LoginProps) {
 
     if (mode === 'login') {
       setLoading(true)
-      await new Promise(r => setTimeout(r, 600))
-      setLoading(false)
-
-      // Check against registered users in localStorage
-      let users: Array<{ name: string; email: string; department: string; password: string }> = []
       try {
-        users = JSON.parse(localStorage.getItem('ale_users') || '[]')
-        if (!Array.isArray(users)) users = []
-      } catch (err) {
-        users = []
+        await login(email, password)
+        navigate('/dashboard')
+      } catch (err: any) {
+        setErrors({ email: err.message || 'Incorrect email or password.' })
+      } finally {
+        setLoading(false)
       }
-      
-      const matchedUser = users.find(u => u.email === email)
-
-      if (!matchedUser) {
-        setErrors({ email: 'register before login' })
-        return
-      }
-      if (matchedUser.password !== password) {
-        setErrors({ password: 'Incorrect password. Please try again.' })
-        return
-      }
-
-      onLogin({ name: matchedUser.name, email: matchedUser.email, department: matchedUser.department })
-      navigate('/dashboard')
     }
   }
 
@@ -172,14 +156,12 @@ export default function Login({ onLogin }: LoginProps) {
             fontSize: '44px', fontWeight: 700, lineHeight: 1.12,
             color: 'white', letterSpacing: '-0.03em', marginBottom: '16px',
           }}>
-            Your enterprise<br />
-            documents,{' '}
             <span style={{
               background: 'linear-gradient(90deg, #c4b5fd, #f0abfc)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
             }}>
-              finally intelligent
+              Ask. Discover. Resolve
             </span>
           </h1>
 
@@ -188,12 +170,12 @@ export default function Login({ onLogin }: LoginProps) {
             lineHeight: 1.6, maxWidth: '440px', marginBottom: '36px',
           }}>
             Stop digging through folders. Ask a question, get a precise answer
-            with the exact page and section it came from — in under 2 seconds.
+            with the exact page and section it came from.
           </p>
 
           {/* Stats row */}
           <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+            display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
             gap: '12px', marginBottom: '40px',
           }}>
             {STATS.map(({ value, label, icon: Icon }) => (
@@ -243,32 +225,7 @@ export default function Login({ onLogin }: LoginProps) {
           </div>
         </div>
 
-        {/* Bottom: Testimonial */}
-        <div className="relative z-10" style={{
-          background: 'rgba(255,255,255,0.06)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: '14px', padding: '16px 20px',
-          backdropFilter: 'blur(8px)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{
-              width: '36px', height: '36px', borderRadius: '50%',
-              background: 'linear-gradient(135deg, #7c3aed, #a855f7)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0, color: 'white', fontWeight: 700, fontSize: '13px',
-            }}>
-              TK
-            </div>
-            <div>
-              <div style={{ color: 'rgba(255,255,255,0.9)', fontSize: '13px', lineHeight: 1.5 }}>
-                "Found the answer to a 3-hour search in 8 seconds. The citation was on the exact page."
-              </div>
-              <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', marginTop: '3px' }}>
-                Thirumalaikumar · Network Engineering Intern
-              </div>
-            </div>
-          </div>
-        </div>
+
       </div>
 
       {/* ── RIGHT: Auth Card ──────────────────────────────────── */}
@@ -446,13 +403,26 @@ export default function Login({ onLogin }: LoginProps) {
 
                 <button
                   type="button"
-                  onClick={() => {
-                    // SSO: create a guest session
-                    const ssoUser = { name: 'ALE SSO User', email: 'sso@ale.com', department: 'ALE' }
-                    onLogin(ssoUser)
-                    navigate('/dashboard')
+                  onClick={async () => {
+                    // SSO: create a guest session or login SSO user
+                    setLoading(true)
+                    try {
+                      await login('sso@ale.com', 'ssoPassword123!')
+                      navigate('/dashboard')
+                    } catch (err: any) {
+                      try {
+                        await signup('ALE SSO User', 'sso@ale.com', 'ALE', 'ssoPassword123!')
+                        await login('sso@ale.com', 'ssoPassword123!')
+                        navigate('/dashboard')
+                      } catch (signupErr: any) {
+                        setErrors({ email: signupErr.message || 'SSO Login failed. Please register.' })
+                      }
+                    } finally {
+                      setLoading(false)
+                    }
                   }}
-                  className="w-full flex items-center justify-center gap-2 border border-gray-200 dark:border-gray-700 rounded-lg py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors font-medium"
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-2 border border-gray-200 dark:border-gray-700 rounded-lg py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors font-medium disabled:opacity-50"
                 >
                   <Building2 size={15} className="text-purple-600" />
                   Continue with ALE SSO
