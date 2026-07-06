@@ -191,8 +191,10 @@ export async function getHealth(): Promise<{ status: string; faiss_ready: boolea
 
 export interface AuthUser {
   name: string
+  display_name?: string
   email: string
   department: string
+  profile_picture?: string
 }
 
 export interface LoginResponse {
@@ -239,4 +241,53 @@ export async function getConversations(): Promise<ConversationEntry[]> {
 
 export async function deleteConversation(convId: string): Promise<{ success: boolean }> {
   return request<{ success: boolean }>(`/conversations/${convId}`, { method: 'DELETE' })
+}
+
+export interface NotificationItem {
+  id: number
+  type: string
+  text: string
+  link?: string
+  is_read: boolean
+  time: string
+}
+
+export async function getNotifications(): Promise<NotificationItem[]> {
+  return request<NotificationItem[]>('/notifications')
+}
+
+export async function getUnreadCount(): Promise<{ count: number }> {
+  return request<{ count: number }>('/notifications/unread-count')
+}
+
+export async function markAsRead(id: number): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>(`/notifications/${id}/read`, { method: 'POST' })
+}
+
+export async function markAllAsRead(): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>('/notifications/read-all', { method: 'POST' })
+}
+
+export async function deleteNotification(id: number): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>(`/notifications/${id}`, { method: 'DELETE' })
+}
+
+export async function deleteAllNotifications(): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>('/notifications', { method: 'DELETE' })
+}
+
+export interface UpdateProfilePayload {
+  username?: string
+  display_name?: string
+  email?: string
+  profile_picture?: string
+  current_password?: string
+  new_password?: string
+}
+
+export async function updateUserProfile(payload: UpdateProfilePayload): Promise<{ success: boolean; access_token: string; user: AuthUser }> {
+  return request('/auth/profile/update', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
 }

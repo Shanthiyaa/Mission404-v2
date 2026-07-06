@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime, Text
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime, Text, Boolean
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
 # ── Database Connection Selection ─────────────────────────────────────────────
@@ -27,11 +27,14 @@ class User(Base):
     email = Column(String(150), unique=True, index=True, nullable=False)
     hashed_password = Column(String(200), nullable=False)
     department = Column(String(100), nullable=True)
+    display_name = Column(String(100), nullable=True)
+    profile_picture = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     documents = relationship("Document", back_populates="owner", cascade="all, delete-orphan")
     conversations = relationship("Conversation", back_populates="owner", cascade="all, delete-orphan")
     activities = relationship("UserActivity", back_populates="owner", cascade="all, delete-orphan")
+    notifications = relationship("Notification", back_populates="owner", cascade="all, delete-orphan")
 
 
 class Document(Base):
@@ -90,7 +93,30 @@ class UserActivity(Base):
     owner = relationship("User", back_populates="activities")
 
 
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    type = Column(String(50), nullable=True)  # 'ai_answer', 'doc_processed', 'doc_failed', 'doc_deleted', 'duplicate_upload'
+    text = Column(String(500), nullable=False)
+    link = Column(String(250), nullable=True)
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    owner = relationship("User", back_populates="notifications")
+
+
 # ── Initialization ────────────────────────────────────────────────────────────
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    # Check and add missing columns dynamically (e.g. for sqlite update support)
+    from sqlalchemy import inspect, text
+    inspector = inspect(engine)
+    columns = [c["name"] for c in inspector.get_columns("users")]
+    with engine.begin() as conn:
+        if "display_name" not in columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN display_name VARCHAR(100)"))
+        if "profile_picture" not in columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN profile_picture TEXT"))

@@ -10,7 +10,15 @@ import {
   getProfile,
   getConversations,
   deleteConversation,
-  TOKEN_KEY
+  TOKEN_KEY,
+  getNotifications,
+  getUnreadCount,
+  markAsRead,
+  markAllAsRead,
+  deleteNotification,
+  deleteAllNotifications,
+  NotificationItem,
+  AuthUser
 } from '../api/client'
 import type { Document, Citation } from '../api/client'
 import type { UploadFile, Message } from '../types'
@@ -23,7 +31,7 @@ export interface ConversationEntry {
 
 interface GlobalStateContextType {
   token: string | null
-  user: { name: string; email: string; department: string } | null
+  user: AuthUser | null
   authLoading: boolean
   login: (email: string, password: string) => Promise<void>
   signup: (name: string, email: string, department: string, password: string) => Promise<void>
@@ -56,6 +64,15 @@ interface GlobalStateContextType {
   sendChatQuery: (text: string, sessionId: string) => Promise<void>
   deleteDoc: (docId: string) => Promise<void>
   refreshDocuments: () => Promise<void>
+
+  notifications: NotificationItem[]
+  unreadCount: number
+  fetchNotifications: () => Promise<void>
+  markNotifAsRead: (id: number) => Promise<void>
+  markAllNotifsAsRead: () => Promise<void>
+  deleteNotif: (id: number) => Promise<void>
+  deleteAllNotifs: () => Promise<void>
+  updateUser: (updatedUser: AuthUser, newToken?: string) => void
 }
 
 const GlobalStateContext = createContext<GlobalStateContextType | undefined>(undefined)
@@ -70,7 +87,7 @@ const INITIAL: Message[] = [
 export function GlobalStateProvider({ children }: { children: React.ReactNode }) {
   // --- Auth State ---
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY))
-  const [user, setUser] = useState<{ name: string; email: string; department: string } | null>(null)
+  const [user, setUser] = useState<AuthUser | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
 
   // --- Scroll State (to preserve position during background gen & navigation) ---

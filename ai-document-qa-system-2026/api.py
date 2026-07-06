@@ -32,7 +32,7 @@ import jwt
 import bcrypt
 
 # ── Database & Models ─────────────────────────────────────────────────────────
-from db import init_db, SessionLocal, User, Document, Conversation, Message, UserActivity
+from db import init_db, SessionLocal, User, Document, Conversation, Message, UserActivity, Notification
 
 JWT_SECRET = os.getenv("JWT_SECRET", "SUPER_SECRET_SECURITY_KEY_ALE_ASSISTANT_2026")
 JWT_ALGORITHM = "HS256"
@@ -59,7 +59,7 @@ def create_access_token(user_id: int, email: str) -> str:
     return token
 
 # ── FastAPI ───────────────────────────────────────────────────────────────────
-from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -111,12 +111,23 @@ def get_db():
         db.close()
 
 # ── Auth dependency ────────────────────────────────────────────────────────────
-reusable_oauth2 = HTTPBearer()
+reusable_oauth2 = HTTPBearer(auto_error=False)
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(reusable_oauth2)):
-    token = credentials.credentials
+def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(reusable_oauth2),
+    token: Optional[str] = Query(None)
+):
+    actual_token = None
+    if credentials:
+        actual_token = credentials.credentials
+    elif token:
+        actual_token = token
+
+    if not actual_token:
+        raise HTTPException(status_code=401, detail="Session expired or invalid authorization token.")
+
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(actual_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = payload.get("user_id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid authorization token.")
@@ -169,6 +180,25 @@ def _append_activity(user_id: int, text: str, color: str = "bg-purple-500") -> N
         db.commit()
     except Exception as e:
         log.error(f"Failed to append activity in DB: {e}")
+    finally:
+        db.close()
+
+
+def _create_notification(user_id: int, type: str, text: str, link: str = None) -> None:
+    db = SessionLocal()
+    try:
+        notif = Notification(
+            user_id=user_id,
+            type=type,
+            text=text,
+            link=link,
+            is_read=False,
+            created_at=datetime.utcnow()
+        )
+        db.add(notif)
+        db.commit()
+    except Exception as e:
+        log.error(f"Failed to create notification: {e}")
     finally:
         db.close()
 
@@ -420,6 +450,13 @@ def _run_pipeline(task_id: str, file_path: str, doc_entries: list[dict], user_id
             color="bg-purple-500"
         )
 
+        _create_notification(
+            user_id,
+            type="doc_processed",
+            text=f'"{filename}" has been successfully indexed.',
+            link="/knowledge-base"
+        )
+
         t.update({
             "stage":    "Complete",
             "progress": 100,
@@ -444,6 +481,13 @@ def _run_pipeline(task_id: str, file_path: str, doc_entries: list[dict], user_id
             db.close()
 
         _append_activity(user_id, f"Failed to index {filename}: {exc}", color="bg-red-500")
+
+        _create_notification(
+            user_id,
+            type="doc_failed",
+            text=f'Failed to index "{filename}": {exc}',
+            link="/upload"
+        )
 
         t.update({
             "stage":    "Failed",
@@ -494,8 +538,10 @@ async def login(req: LoginRequest, db = Depends(get_db)):
         "token_type": "bearer",
         "user": {
             "name": user.username,
+            "display_name": user.display_name or user.username,
             "email": user.email,
-            "department": user.department
+            "department": user.department,
+            "profile_picture": user.profile_picture
         }
     }
 
@@ -506,9 +552,123 @@ async def get_profile(current_user: dict = Depends(get_current_user), db = Depen
         raise HTTPException(status_code=404, detail="User not found.")
     return {
         "name": user.username,
+        "display_name": user.display_name or user.username,
         "email": user.email,
-        "department": user.department
+        "department": user.department,
+        "profile_picture": user.profile_picture
     }
+
+class UpdateProfileRequest(BaseModel):
+    username: Optional[str] = None
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+    profile_picture: Optional[str] = None
+    current_password: Optional[str] = None
+    new_password: Optional[str] = None
+
+@app.post("/api/auth/profile/update")
+async def update_profile(req: UpdateProfileRequest, current_user: dict = Depends(get_current_user), db = Depends(get_db)):
+    user_id = current_user["user_id"]
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    if req.new_password:
+        if not req.current_password:
+            raise HTTPException(status_code=400, detail="Current password is required to update password.")
+        if not verify_password(req.current_password, user.hashed_password):
+            raise HTTPException(status_code=400, detail="Incorrect current password.")
+        if len(req.new_password) < 6:
+            raise HTTPException(status_code=400, detail="New password must be at least 6 characters.")
+        user.hashed_password = hash_password(req.new_password)
+
+    if req.email and req.email != user.email:
+        taken = db.query(User).filter(User.email == req.email).first()
+        if taken:
+            raise HTTPException(status_code=400, detail="Email is already registered by another account.")
+        user.email = req.email
+
+    if req.username and req.username != user.username:
+        user.username = req.username
+
+    if req.display_name is not None:
+        user.display_name = req.display_name
+
+    if req.profile_picture is not None:
+        user.profile_picture = req.profile_picture
+
+    db.commit()
+    db.refresh(user)
+
+    token = create_access_token(user.id, user.email)
+    return {
+        "success": True,
+        "access_token": token,
+        "user": {
+            "name": user.username,
+            "display_name": user.display_name or user.username,
+            "email": user.email,
+            "department": user.department,
+            "profile_picture": user.profile_picture
+        }
+    }
+
+# ── Notifications Endpoints ───────────────────────────────────────────────────
+@app.get("/api/notifications")
+async def list_notifications(current_user: dict = Depends(get_current_user), db = Depends(get_db)):
+    user_id = current_user["user_id"]
+    notifs = db.query(Notification).filter(Notification.user_id == user_id).order_by(Notification.created_at.desc()).all()
+    return [
+        {
+            "id": n.id,
+            "type": n.type,
+            "text": n.text,
+            "link": n.link,
+            "is_read": n.is_read,
+            "time": _format_time_ago(n.created_at.isoformat())
+        }
+        for n in notifs
+    ]
+
+@app.get("/api/notifications/unread-count")
+async def unread_notifications_count(current_user: dict = Depends(get_current_user), db = Depends(get_db)):
+    user_id = current_user["user_id"]
+    count = db.query(Notification).filter(Notification.user_id == user_id, Notification.is_read == False).count()
+    return {"count": count}
+
+@app.post("/api/notifications/{notif_id}/read")
+async def mark_notification_read(notif_id: int, current_user: dict = Depends(get_current_user), db = Depends(get_db)):
+    user_id = current_user["user_id"]
+    notif = db.query(Notification).filter(Notification.id == notif_id, Notification.user_id == user_id).first()
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found.")
+    notif.is_read = True
+    db.commit()
+    return {"success": True}
+
+@app.post("/api/notifications/read-all")
+async def mark_all_notifications_read(current_user: dict = Depends(get_current_user), db = Depends(get_db)):
+    user_id = current_user["user_id"]
+    db.query(Notification).filter(Notification.user_id == user_id, Notification.is_read == False).update({Notification.is_read: True})
+    db.commit()
+    return {"success": True}
+
+@app.delete("/api/notifications/{notif_id}")
+async def delete_single_notification(notif_id: int, current_user: dict = Depends(get_current_user), db = Depends(get_db)):
+    user_id = current_user["user_id"]
+    notif = db.query(Notification).filter(Notification.id == notif_id, Notification.user_id == user_id).first()
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found.")
+    db.delete(notif)
+    db.commit()
+    return {"success": True}
+
+@app.delete("/api/notifications")
+async def delete_all_notifications(current_user: dict = Depends(get_current_user), db = Depends(get_db)):
+    user_id = current_user["user_id"]
+    db.query(Notification).filter(Notification.user_id == user_id).delete()
+    db.commit()
+    return {"success": True}
 
 # ── Conversations ─────────────────────────────────────────────────────────────
 @app.get("/api/conversations")
@@ -590,6 +750,12 @@ async def upload_document(
         
         if dup:
             temp_dest.unlink(missing_ok=True)
+            _create_notification(
+                user_id,
+                type="duplicate_upload",
+                text=f'Upload blocked: "{file.filename}" is a duplicate of "{original}".',
+                link="/upload"
+            )
             raise HTTPException(
                 status_code=409,
                 detail=f"Duplicate document detected. This file has the same content as '{original}' already in your knowledge base."
@@ -844,6 +1010,12 @@ async def query(req: QueryRequest, current_user: dict = Depends(get_current_user
                         )
                         db.add(assist_msg)
                         db.commit()
+                        _create_notification(
+                            user_id,
+                            type="ai_answer",
+                            text="AI has completed answering your question.",
+                            link=f"/chat?id={req.session_id}"
+                        )
                         
                         return {
                             "answer": matched_assist_msg.content,
@@ -1012,6 +1184,12 @@ async def query(req: QueryRequest, current_user: dict = Depends(get_current_user
     )
     db.add(assist_msg)
     db.commit()
+    _create_notification(
+        user_id,
+        type="ai_answer",
+        text="AI has completed answering your question.",
+        link=f"/chat?id={req.session_id}"
+    )
 
     return {
         "answer":     answer,
@@ -1129,6 +1307,12 @@ async def delete_document(doc_id: str, current_user: dict = Depends(get_current_
                 log.info("All documents deleted — FAISS index cleared.")
 
     _append_activity(user_id, f"{filename} deleted from knowledge base", color="bg-red-500")
+    _create_notification(
+        user_id,
+        type="doc_deleted",
+        text=f'"{filename}" has been successfully deleted.',
+        link="/knowledge-base"
+    )
     return {"success": True, "deleted": filename}
 
 
