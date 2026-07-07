@@ -96,7 +96,7 @@ if "messages" not in st.session_state:
 
 @st.cache_resource(show_spinner="Loading embedding model (first run only)...")
 def get_embedder():
-    return EmbeddingModel()
+    return SentenceTransformerEmbeddings()
 
 
 def process_uploaded_files(files, embedder):
