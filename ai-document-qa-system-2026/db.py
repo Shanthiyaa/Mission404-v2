@@ -1,18 +1,24 @@
 import os
 from datetime import datetime
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime, Text, Boolean
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
+# Load environment variables
+load_dotenv()
+
 # ── Database Connection Selection ─────────────────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL")
-if DATABASE_URL:
-    if DATABASE_URL.startswith("postgres://"):
-        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-else:
-    os.makedirs("./data", exist_ok=True)
-    DATABASE_URL = "sqlite:///./data/knowledge_assistant.db"
-    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is not set. A PostgreSQL database is required.")
+
+# Ensure we use psycopg driver (psycopg3) and standard schema protocol name
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -115,7 +121,7 @@ class Notification(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
-    # Check and add missing columns dynamically (e.g. for sqlite update support)
+    # Check and add missing columns dynamically (e.g. for PostgreSQL migration compatibility)
     from sqlalchemy import inspect, text
     inspector = inspect(engine)
     columns = [c["name"] for c in inspector.get_columns("users")]
@@ -126,7 +132,7 @@ def init_db():
         if "profile_picture" not in columns:
             conn.execute(text("ALTER TABLE users ADD COLUMN profile_picture TEXT"))
         if "last_activity" not in columns:
-            conn.execute(text("ALTER TABLE users ADD COLUMN last_activity DATETIME"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN last_activity TIMESTAMP"))
         if "title" not in columns_notif:
             conn.execute(text("ALTER TABLE notifications ADD COLUMN title VARCHAR(200)"))
         if "target_conv_id" not in columns_notif:

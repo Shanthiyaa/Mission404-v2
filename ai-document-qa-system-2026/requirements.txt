@@ -20,6 +20,7 @@ ollama>=0.3.0
 fastapi>=0.111.0
 uvicorn[standard]>=0.29.0
 python-multipart>=0.0.9
+psycopg[binary]>=3.1.0
 
 # ── Streamlit (original UI — unchanged) ──────────────────────────────────────
 streamlit>=1.35.0
