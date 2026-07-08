@@ -7,6 +7,10 @@ Place this file in the ROOT of ai-document-qa-system-2026/
 (same level as config.py, member1/, member2/, member3/)
 """
 
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects import postgresql
 import os
 import sys
 import re
@@ -1083,13 +1087,18 @@ async def query(req: QueryRequest, current_user: dict = Depends(get_current_user
 
     if _is_smalltalk(q):
         ans = "Hello! I'm your Ale Docbot. Ask me anything about your uploaded user guides, release notes, SQA test cases, and KCS articles."
+        print("="*50)
+        print("Answer length:", len(answer))
+        print("Citations length:", len(citations_json))
+        print("Selected docs:", selected_docs_json)
+        print("="*50)
         assist_msg = Message(
-            conversation_id=req.session_id,
-            role="assistant",
-            content=ans,
-            citations="[]",
-            selected_docs=selected_docs_json,
-            timestamp=datetime.utcnow()
+        conversation_id=req.session_id,
+        role="assistant",
+        content="hello",
+        citations="[]",
+        selected_docs="[]",
+        timestamp=datetime.utcnow()
         )
         db.add(assist_msg)
         db.commit()
@@ -1338,10 +1347,15 @@ async def query(req: QueryRequest, current_user: dict = Depends(get_current_user
         selected_docs=selected_docs_json,
         timestamp=datetime.utcnow()
     )
-    db.add(assist_msg)
-    db.commit()
-    db.refresh(user_msg)
-    db.refresh(assist_msg)
+    try:
+        db.add(assist_msg)
+        db.commit()
+        db.refresh(user_msg)
+        db.refresh(assist_msg)
+    except Exception as e:
+        print("DATABASE ERROR:", repr(e))
+        db.rollback()
+        raise
     
     _create_notification(
         user_id,
