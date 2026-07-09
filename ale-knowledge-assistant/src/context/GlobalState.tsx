@@ -77,6 +77,18 @@ interface GlobalStateContextType {
 
 const GlobalStateContext = createContext<GlobalStateContextType | undefined>(undefined)
 
+// FIX: conversation ids must be globally unique across users/sessions.
+// A hardcoded default id (e.g. `1`) collides across different browser
+// sessions/users, and the backend's Conversation.id is a global primary key —
+// two users both starting from id "1" causes a primary-key collision on the
+// very first query, which the backend surfaces as an unhandled HTTP 500.
+function makeConversationId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 const INITIAL: Message[] = [
   {
     role: 'assistant',
@@ -94,10 +106,12 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
   const [scrollPositions, setScrollPositions] = useState<Record<string | number, number>>({})
 
   // --- Chat & Conversations ---
-  const [conversations, setConversations] = useState<ConversationEntry[]>([
-    { id: 1, title: 'New conversation', messages: INITIAL }
+  // FIX: use a unique id instead of the hardcoded `1` (see makeConversationId above)
+  const [defaultConvId] = useState<string>(() => makeConversationId())
+  const [conversations, setConversations] = useState<ConversationEntry[]>(() => [
+    { id: defaultConvId, title: 'New conversation', messages: INITIAL }
   ])
-  const [activeId, setActiveId] = useState<string | number>(1)
+  const [activeId, setActiveId] = useState<string | number>(() => defaultConvId)
   const [activeQueries, setActiveQueries] = useState<Record<string | number, boolean>>({})
   const [selectedDocs, setSelectedDocs] = useState<string[]>([])
 
@@ -153,8 +167,9 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
     localStorage.removeItem(TOKEN_KEY)
     setToken(null)
     setUser(null)
-    setConversations([{ id: 1, title: 'New conversation', messages: INITIAL }])
-    setActiveId(1)
+    const freshId = makeConversationId()
+    setConversations([{ id: freshId, title: 'New conversation', messages: INITIAL }])
+    setActiveId(freshId)
     setDocuments([])
     setScrollPositions({})
     setNotifications([])
@@ -230,15 +245,18 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
   const loadUserData = useCallback(async () => {
     try {
       const convs = await getConversations()
-      setConversations(convs.length > 0 ? convs : [{ id: 1, title: 'New conversation', messages: INITIAL }])
       if (convs.length > 0) {
+        setConversations(convs)
         setActiveId(convs[0].id)
       } else {
-        setActiveId(1)
+        const freshId = makeConversationId()
+        setConversations([{ id: freshId, title: 'New conversation', messages: INITIAL }])
+        setActiveId(freshId)
       }
     } catch {
-      setConversations([{ id: 1, title: 'New conversation', messages: INITIAL }])
-      setActiveId(1)
+      const freshId = makeConversationId()
+      setConversations([{ id: freshId, title: 'New conversation', messages: INITIAL }])
+      setActiveId(freshId)
     }
 
     try {
@@ -374,7 +392,10 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
 
   // --- Handlers ---
   const newConversation = () => {
-    const id = Date.now()
+    // FIX: use a globally-unique id (this becomes the backend session_id too —
+    // see sendChatQuery / Chat.tsx) instead of Date.now(), which is not
+    // guaranteed unique across simultaneous users.
+    const id = makeConversationId()
     setConversations(prev => [{ id, title: 'New conversation', messages: INITIAL }, ...prev])
     setActiveId(id)
   }
@@ -386,7 +407,7 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
       if (remaining.length > 0) {
         setActiveId(remaining[0].id)
       } else {
-        const fallbackId = Date.now()
+        const fallbackId = makeConversationId()
         setConversations([{ id: fallbackId, title: 'New conversation', messages: INITIAL }])
         setActiveId(fallbackId)
       }

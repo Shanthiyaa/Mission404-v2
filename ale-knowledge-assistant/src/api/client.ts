@@ -238,7 +238,11 @@ export interface Message {
 }
 
 export interface ConversationEntry {
-  id: number
+  // FIX: the backend's Conversation.id column is a String(50) primary key,
+  // and GlobalState.tsx now always generates string ids (crypto.randomUUID())
+  // for conversations — this was typed as `number`, which no longer matches
+  // what actually comes back from /api/conversations.
+  id: string
   title: string
   messages: Message[]
 }

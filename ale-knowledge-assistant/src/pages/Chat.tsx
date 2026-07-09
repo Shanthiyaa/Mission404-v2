@@ -42,7 +42,9 @@ function GroupedFileSourceCard({ filename, citations }: GroupedFileSourceCardPro
       {/* Findings list */}
       <div className="space-y-3">
         {citations.map((cite, ci) => {
-          const ext = cite.source_file.split('.').pop()?.toLowerCase()
+          // FIX: guard against a missing/undefined source_file so a single
+          // malformed citation can't throw and blank out the whole answer.
+          const ext = cite.source_file ? cite.source_file.split('.').pop()?.toLowerCase() : ''
           let linkUrl = ''
           const textParam = cite.text ? `&text=${encodeURIComponent(cite.text)}` : ''
           if (ext === 'pdf') {
@@ -311,7 +313,6 @@ export default function Chat() {
   const msgIdToScrollRef = useRef<string | null>(searchParams.get('msgId'))
 
   const [input, setInput] = useState('')
-  const [sessionId] = useState(() => Math.random().toString(36).slice(2))
   const [docSelectionError, setDocSelectionError] = useState<string | null>(null)
   const [showScrollBottom, setShowScrollBottom] = useState(false)
   const [showQnNav, setShowQnNav] = useState(false)
@@ -504,7 +505,12 @@ export default function Chat() {
     }
 
     setInput('')
-    await sendChatQuery(q, sessionId)
+    // FIX: send the actual conversation id as the backend session_id, instead
+    // of a random value generated once per component mount. This is what ties
+    // "which conversation this is" in the sidebar to "which conversation this
+    // is" on the server, so all Q&A for one conversation stays grouped, and
+    // "New Conversation" actually starts a new one on the backend too.
+    await sendChatQuery(q, String(activeId))
   }
 
   return (
@@ -541,7 +547,15 @@ export default function Chat() {
                   {c.title}
                 </div>
                 <div className="text-xs text-gray-400 mt-0.5">
-                  {c.messages.length - 1} message{c.messages.length !== 2 ? 's' : ''}
+                  {/* FIX: count actual user questions instead of doing
+                      `messages.length - 1` (assumes a local greeting message
+                      that isn't present on conversations loaded from the
+                      backend, producing 0 or negative counts like "-1
+                      messages"). */}
+                  {(() => {
+                    const qCount = c.messages.filter(m => m.role === 'user').length
+                    return `${qCount} message${qCount !== 1 ? 's' : ''}`
+                  })()}
                 </div>
               </div>
             ))}
