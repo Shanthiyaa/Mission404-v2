@@ -18,11 +18,11 @@ if DATABASE_URL.startswith("postgres://"):
 elif DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 
+from sqlalchemy.pool import NullPool  # 1. Import NullPool
+
 engine = create_engine(
     DATABASE_URL,
-    pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10
+    poolclass=NullPool  # 2. Replace pool_size, max_overflow, and pool_recycle with this
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
