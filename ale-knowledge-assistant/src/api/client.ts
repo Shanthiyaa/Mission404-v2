@@ -15,7 +15,9 @@ export class ApiError extends Error {
 
 async function request<T>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  _retries = 3,
+  _delayMs = 500
 ): Promise<T> {
   const token = localStorage.getItem(TOKEN_KEY)
   const headers: Record<string, string> = {
@@ -25,10 +27,21 @@ async function request<T>(
     headers['Authorization'] = `Bearer ${token}`
   }
 
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { ...headers, ...options.headers },
-    ...options,
-  })
+  let res: Response
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      headers: { ...headers, ...options.headers },
+      ...options,
+    })
+  } catch (networkErr) {
+    // Network-level failure (e.g. ECONNREFUSED during backend startup).
+    // Retry with exponential backoff before giving up.
+    if (_retries > 0) {
+      await new Promise(resolve => setTimeout(resolve, _delayMs))
+      return request<T>(path, options, _retries - 1, _delayMs * 2)
+    }
+    throw networkErr
+  }
 
   if (!res.ok) {
     let detail = `HTTP ${res.status}`
