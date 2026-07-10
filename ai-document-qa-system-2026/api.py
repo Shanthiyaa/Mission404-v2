@@ -28,7 +28,7 @@ import shutil
 import logging
 import threading
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from contextlib import asynccontextmanager
 
@@ -230,7 +230,7 @@ def _create_notification(
             text=text,
             link=link,
             is_read=False,
-            created_at=datetime.utcnow(),
+            created_at=_utc_now(),
             title=title,
             target_conv_id=target_conv_id,
             target_msg_id=target_msg_id
@@ -243,19 +243,57 @@ def _create_notification(
         db.close()
 
 
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _utc_iso(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 def _format_time_ago(iso_str: str) -> str:
     try:
-        dt = datetime.fromisoformat(iso_str)
-        diff = int((datetime.now() - dt).total_seconds())
+        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        diff = int((datetime.now(timezone.utc) - dt.astimezone(timezone.utc)).total_seconds())
+        diff = max(diff, 0)
         if diff < 60:
-            return f"{diff}s ago"
+            return "Just now"
         if diff < 3600:
-            return f"{diff // 60}m ago"
+            minutes = diff // 60
+            return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
         if diff < 86400:
-            return f"{diff // 3600}h ago"
-        return f"{diff // 86400}d ago"
+            hours = diff // 3600
+            return f"{hours} hour{'s' if hours != 1 else ''} ago"
+        days = diff // 86400
+        return f"{days} day{'s' if days != 1 else ''} ago"
     except Exception:
         return "recently"
+
+
+def _detect_category_from_filename(filename: str, fallback_category: str) -> str:
+    name = Path(filename).stem.lower()
+    normalized = re.sub(r"[_\-.]+", " ", name)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    compact = re.sub(r"[^a-z0-9]", "", normalized)
+
+    category_keywords = [
+        ("user_guide", ["user guide", "user guides", "guide", "manual"], ["userguide", "userguides"]),
+        ("release_note", ["release note", "release notes"], ["releasenote", "releasenotes"]),
+        ("kcs", ["article", "articles", "knowledge", "kcs", "faq"], []),
+        ("sqa", ["test case", "test cases", "testing", "validation"], ["testcase", "testcases"]),
+    ]
+
+    for category, phrases, compact_phrases in category_keywords:
+        if any(phrase in normalized for phrase in phrases):
+            return category
+        if any(phrase in compact for phrase in compact_phrases):
+            return category
+
+    return fallback_category
 
 
 def _get_pdf_page_count(filepath: Path) -> int:
@@ -351,7 +389,8 @@ def _run_pipeline(task_id: str, file_path: str, doc_entries: list[dict], user_id
                     and not Path(name).name.startswith(".")
                 ]
                 
-                for name, entry in zip(zip_files, doc_entries):
+                for entry in doc_entries:
+                    name = entry.get("zip_member", entry["name"])
                     target_name = entry["name"]
                     dest_file = UPLOAD_PATH / target_name
                     with open(dest_file, "wb") as f_sub:
@@ -674,7 +713,8 @@ async def list_notifications(current_user: dict = Depends(get_current_user), db 
             "text": n.text,
             "link": n.link,
             "is_read": n.is_read,
-            "time": _format_time_ago(n.created_at.isoformat()),
+            "created_at": _utc_iso(n.created_at),
+            "time": _format_time_ago(_utc_iso(n.created_at)),
             "title": n.title,
             "target_conv_id": n.target_conv_id,
             "target_msg_id": n.target_msg_id
@@ -908,12 +948,14 @@ async def upload_document(
         for name, sub_filename, temp_sub_path in valid_zip_files:
             target_path = _get_unique_filename(UPLOAD_PATH / sub_filename)
             shutil.move(str(temp_sub_path), str(target_path))
+            detected_category = _detect_category_from_filename(sub_filename, category)
             
             doc_id = str(uuid.uuid4())[:12]
             doc_entry = {
                 "id":          doc_id,
                 "name":        target_path.name,
-                "category":    category,
+                "zip_member":  name,
+                "category":    detected_category,
                 "size":        "—",
                 "size_bytes":  0,
                 "pages":       0,
@@ -928,7 +970,7 @@ async def upload_document(
                 id=doc_id,
                 user_id=user_id,
                 name=target_path.name,
-                category=category,
+                category=detected_category,
                 size="—",
                 size_bytes=0,
                 pages=0,

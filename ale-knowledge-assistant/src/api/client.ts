@@ -261,6 +261,7 @@ export interface NotificationItem {
   text: string
   link?: string
   is_read: boolean
+  created_at?: string
   time: string
   title?: string
   target_conv_id?: string

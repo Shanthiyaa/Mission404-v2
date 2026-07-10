@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
-  Brain, Building2, Search, FileText, Quote, Zap,
-  Shield, ChevronRight, Eye, EyeOff, ArrowRight,
-  CheckCircle2, Users, Database, Clock
+  Brain, Search, FileText, Quote, Zap,
+  Shield, Eye, EyeOff, ArrowRight,
+  CheckCircle2, Database
 } from 'lucide-react'
 import { useGlobalState } from '../context/GlobalState'
 
@@ -37,11 +37,11 @@ const FEATURES = [
 const STATS = [
   { value: '10x', label: 'Faster than manual search', icon: Zap },
   { value: '95%', label: 'Answer accuracy rate', icon: CheckCircle2 },
-  { value: '100+', label: 'Document formats supported', icon: Database },
+  { value: '100 plus', label: 'document supported', icon: Database },
 ]
 
 export default function Login({ onToggleDark }: LoginProps) {
-  const { login, signup } = useGlobalState()
+  const { login } = useGlobalState()
   const [mode, setMode]           = useState<AuthMode>('login')
   const [email, setEmail]         = useState('')
   const [password, setPassword]   = useState('')
@@ -387,47 +387,6 @@ export default function Login({ onToggleDark }: LoginProps) {
                   )}
                 </button>
               </form>
-            )}
-
-            {/* Divider + SSO */}
-            {!forgotSent && (
-              <>
-                <div className="relative my-5">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-100 dark:border-gray-800" />
-                  </div>
-                  <div className="relative flex justify-center">
-                    <span className="bg-white dark:bg-gray-900 px-3 text-xs text-gray-400">or</span>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={async () => {
-                    // SSO: create a guest session or login SSO user
-                    setLoading(true)
-                    try {
-                      await login('sso@ale.com', 'ssoPassword123!')
-                      navigate('/dashboard')
-                    } catch (err: any) {
-                      try {
-                        await signup('ALE SSO User', 'sso@ale.com', 'ALE', 'ssoPassword123!')
-                        await login('sso@ale.com', 'ssoPassword123!')
-                        navigate('/dashboard')
-                      } catch (signupErr: any) {
-                        setErrors({ email: signupErr.message || 'SSO Login failed. Please register.' })
-                      }
-                    } finally {
-                      setLoading(false)
-                    }
-                  }}
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-2 border border-gray-200 dark:border-gray-700 rounded-lg py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors font-medium disabled:opacity-50"
-                >
-                  <Building2 size={15} className="text-purple-600" />
-                  Continue with ALE SSO
-                </button>
-              </>
             )}
 
             {/* Mode switcher */}

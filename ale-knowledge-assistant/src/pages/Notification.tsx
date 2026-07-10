@@ -3,6 +3,29 @@ import { useNavigate } from 'react-router-dom'
 import { RefreshCw, Check, Trash2, Bell, AlertCircle, Info, ExternalLink } from 'lucide-react'
 import { useGlobalState } from '../context/GlobalState'
 
+function formatRelativeTime(utcTimestamp?: string, fallback = 'recently') {
+  if (!utcTimestamp) return fallback
+
+  const timestamp = new Date(utcTimestamp).getTime()
+  if (Number.isNaN(timestamp)) return fallback
+
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000))
+  if (diffSeconds < 60) return 'Just now'
+
+  const diffMinutes = Math.floor(diffSeconds / 60)
+  if (diffMinutes < 60) {
+    return `${diffMinutes} minute${diffMinutes === 1 ? '' : 's'} ago`
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60)
+  if (diffHours < 24) {
+    return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`
+  }
+
+  const diffDays = Math.floor(diffHours / 24)
+  return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`
+}
+
 export default function Notification() {
   const {
     notifications,
@@ -128,7 +151,7 @@ export default function Notification() {
                       )}
                     </div>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[10px] text-gray-400 font-medium">{n.time}</span>
+                      <span className="text-[10px] text-gray-400 font-medium">{formatRelativeTime(n.created_at, n.time)}</span>
                       {n.link && (
                         <button
                           onClick={() => handleNotificationClick(n)}
