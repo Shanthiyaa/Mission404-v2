@@ -10,21 +10,32 @@ load_dotenv()
 # ── Database Connection Selection ─────────────────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
-    raise ValueError("DATABASE_URL environment variable is not set. A PostgreSQL database is required.")
-
-# Ensure we use psycopg driver (psycopg3) and standard schema protocol name
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
-elif DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+    DATABASE_URL = "sqlite:///./data/app.db"
 
 from sqlalchemy.pool import NullPool  # 1. Import NullPool
 
+engine_kwargs = {"poolclass": NullPool}
+
+if DATABASE_URL.startswith("sqlite"):
+    # Local development database.
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
+else:
+    # Ensure we use psycopg driver (psycopg3) and standard schema protocol name
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
+    elif DATABASE_URL.startswith("postgresql://"):
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+
+    if DATABASE_URL.startswith("postgresql+psycopg://") and "sslmode=" not in DATABASE_URL:
+        joiner = "&" if "?" in DATABASE_URL else "?"
+        DATABASE_URL = f"{DATABASE_URL}{joiner}sslmode=require"
+
+    engine_kwargs["connect_args"] = {"prepare_threshold": None}
+    engine_kwargs["use_native_hstore"] = False
+
 engine = create_engine(
     DATABASE_URL,
-    poolclass=NullPool,  # 2. Replace pool_size, max_overflow, and pool_recycle with this
-    connect_args={"prepare_threshold": None},
-    use_native_hstore=False,
+    **engine_kwargs,
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
