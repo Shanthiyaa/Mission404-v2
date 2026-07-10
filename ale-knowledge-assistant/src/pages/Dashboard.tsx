@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Files, MessageSquare, Users, TrendingUp, RefreshCw, AlertCircle, Loader } from 'lucide-react'
+import { Files, MessageSquare, TrendingUp, RefreshCw, AlertCircle, Loader } from 'lucide-react'
 import { getStats } from '../api/client'
 import type { Stats } from '../types'
 
@@ -301,14 +301,6 @@ export default function Dashboard() {
           up:    true,
           icon:  MessageSquare,
           color: 'bg-green-50 text-green-600',
-        },
-        {
-          label: 'Active users',
-          value: String(stats.active_users),
-          sub:   'current session',
-          up:    true,
-          icon:  Users,
-          color: 'bg-purple-50 text-purple-600',
         },
       ]
     : []

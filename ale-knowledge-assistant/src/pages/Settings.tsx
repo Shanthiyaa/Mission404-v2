@@ -40,7 +40,6 @@ export default function Settings({ dark, onToggleDark, user }: SettingsProps) {
   const { multiDoc, setMultiDoc, showCitations, setShowCitations, updateUser } = useGlobalState()
   const [compact, setCompact] = useState(true)
   const [model, setModel] = useState('Llama 3.2')
-  const [k, setK] = useState('3')
 
   // Edit Profile States
   const [isEditing, setIsEditing] = useState(false)
@@ -319,15 +318,6 @@ export default function Settings({ dark, onToggleDark, user }: SettingsProps) {
 
           <div className="card">
             <h2 className="text-sm font-medium text-gray-900 dark:text-white mb-1 pb-2 border-b border-gray-50 dark:border-gray-800">Search preferences</h2>
-            <SettingRow
-              label="Results per query (k)"
-              sub="Number of chunks retrieved"
-              right={
-                <select value={k} onChange={e => setK(e.target.value)} className="text-sm border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 outline-none">
-                  <option>3</option><option>5</option><option>10</option>
-                </select>
-              }
-            />
             <SettingRow label="Multi-document search" sub="Search across all indexed files" right={<Toggle on={multiDoc} onToggle={() => setMultiDoc(!multiDoc)} />} />
             <SettingRow label="Show source citations" sub="Always display source references" right={<Toggle on={showCitations} onToggle={() => setShowCitations(!showCitations)} />} />
           </div>
