@@ -4,6 +4,12 @@ All settings in one place. Change here, applies everywhere.
 """
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
+import os
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
 UPLOAD_DIR       = "./uploaded_docs"        # where files are saved on upload
 CHUNKS_JSON_PATH = "./data/chunks.json"     # Member1 → Member2 handoff
 FAISS_INDEX_DIR  = "./data/faiss_index"     # Member2 saves, Member3 + API loads
@@ -93,8 +99,8 @@ Question: {question}
 Answer (complete, well-formatted with Markdown, all steps if applicable):"""
 
 # ── API Server ────────────────────────────────────────────────────────────────
-API_HOST    = "0.0.0.0"
-API_PORT    = 8000
+API_HOST    = os.getenv("API_HOST", "127.0.0.1")
+API_PORT    = int(os.getenv("API_PORT", "8001"))
 CORS_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",

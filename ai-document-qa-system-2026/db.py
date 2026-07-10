@@ -22,7 +22,9 @@ from sqlalchemy.pool import NullPool  # 1. Import NullPool
 
 engine = create_engine(
     DATABASE_URL,
-    poolclass=NullPool  # 2. Replace pool_size, max_overflow, and pool_recycle with this
+    poolclass=NullPool,  # 2. Replace pool_size, max_overflow, and pool_recycle with this
+    connect_args={"prepare_threshold": None},
+    use_native_hstore=False,
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

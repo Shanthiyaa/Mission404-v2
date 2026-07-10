@@ -1,7 +1,7 @@
 """
 api.py — FastAPI REST layer for ALE Knowledge Assistant
 Wraps member1/extractor, member2/retriever, member2/vector_store.
-Run with: uvicorn api:app --reload --port 8000
+Run with: python run_api.py
 
 Place this file in the ROOT of ai-document-qa-system-2026/
 (same level as config.py, member1/, member2/, member3/)
@@ -79,6 +79,9 @@ from config import (
     TOP_K_RESULTS,
     RAG_PROMPT_TEMPLATE,
     LLM_TEMPERATURE,
+    API_HOST,
+    API_PORT,
+    CORS_ORIGINS,
 )
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -163,6 +166,13 @@ async def lifespan(app: FastAPI):
     # Initialize SQL database tables
     init_db()
     _ensure_retriever()
+    if _retriever_cache.get("loaded"):
+        try:
+            from member2.retriever import _get_embeddings
+            _get_embeddings().embed_query("warmup")
+            log.info("Embedding model warmed up.")
+        except Exception as exc:
+            log.warning(f"Embedding warmup skipped: {exc}")
     log.info("ALE Knowledge API started.")
     log.info(f"  Upload dir  : {UPLOAD_PATH.resolve()}")
     log.info(f"  FAISS index : {FAISS_PATH.resolve()}")
@@ -175,7 +185,7 @@ app = FastAPI(title="ALE Knowledge API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1087,18 +1097,13 @@ async def query(req: QueryRequest, current_user: dict = Depends(get_current_user
 
     if _is_smalltalk(q):
         ans = "Hello! I'm your Ale Docbot. Ask me anything about your uploaded user guides, release notes, SQA test cases, and KCS articles."
-        print("="*50)
-        print("Answer length:", len(answer))
-        print("Citations length:", len(citations_json))
-        print("Selected docs:", selected_docs_json)
-        print("="*50)
         assist_msg = Message(
-        conversation_id=req.session_id,
-        role="assistant",
-        content="hello",
-        citations="[]",
-        selected_docs="[]",
-        timestamp=datetime.utcnow()
+            conversation_id=req.session_id,
+            role="assistant",
+            content=ans,
+            citations="[]",
+            selected_docs=selected_docs_json,
+            timestamp=datetime.utcnow()
         )
         db.add(assist_msg)
         db.commit()
@@ -1114,81 +1119,128 @@ async def query(req: QueryRequest, current_user: dict = Depends(get_current_user
         }
 
     # ── Smart History Lookup (Semantic Cache) ─────────────────────────────────
+    def _normalize_question(text: str) -> str:
+        return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", text.lower())).strip()
+
+    def _same_selected_docs(prev_docs_json: str | None) -> bool:
+        try:
+            prev_docs = sorted(json.loads(prev_docs_json or "[]"))
+            curr_docs = sorted(json.loads(selected_docs_json or "[]"))
+            return prev_docs == curr_docs
+        except Exception:
+            return False
+
+    def _assistant_after(user_message: Message) -> Optional[Message]:
+        return db.query(Message).filter(
+            Message.conversation_id == user_message.conversation_id,
+            Message.id > user_message.id,
+            Message.role == "assistant"
+        ).order_by(Message.id.asc()).first()
+
     prev_user_msgs = db.query(Message).join(Conversation).filter(
         Conversation.user_id == user_id,
-        Message.role == "user"
-    ).all()
-    
-    unique_questions = list(set([m.content for m in prev_user_msgs if m.content != q]))
-    
-    if unique_questions:
+        Message.role == "user",
+        Message.id < user_msg.id
+    ).order_by(Message.id.desc()).limit(100).all()
+
+    current_norm = _normalize_question(q)
+
+    for prev_msg in prev_user_msgs:
+        if _normalize_question(prev_msg.content) == current_norm and _same_selected_docs(prev_msg.selected_docs):
+            matched_assist_msg = _assistant_after(prev_msg)
+            if matched_assist_msg:
+                log.info(f"History Cache HIT: exact question match for '{q}'")
+                citations = json.loads(matched_assist_msg.citations) if matched_assist_msg.citations else []
+
+                assist_msg = Message(
+                    conversation_id=req.session_id,
+                    role="assistant",
+                    content=matched_assist_msg.content,
+                    citations=matched_assist_msg.citations,
+                    selected_docs=selected_docs_json,
+                    timestamp=datetime.utcnow()
+                )
+                db.add(assist_msg)
+                db.commit()
+                db.refresh(user_msg)
+                db.refresh(assist_msg)
+
+                return {
+                    "answer": matched_assist_msg.content,
+                    "citations": citations,
+                    "confidence": 100,
+                    "session_id": req.session_id,
+                    "cached": True,
+                    "cache_type": "exact_history",
+                    "message_id": assist_msg.id,
+                    "user_message_id": user_msg.id,
+                }
+
+    semantic_candidates = [
+        m for m in prev_user_msgs
+        if _same_selected_docs(m.selected_docs) and _assistant_after(m)
+    ]
+
+    if semantic_candidates:
         try:
             from member2.retriever import _get_embeddings
             import numpy as np
             embeddings = _get_embeddings()
             q_vec = np.array(embeddings.embed_query(q), dtype="float32")
-            hist_vecs = np.array(embeddings.embed_documents(unique_questions), dtype="float32")
+            history_questions = [m.content for m in semantic_candidates]
+            hist_vecs = np.array(embeddings.embed_documents(history_questions), dtype="float32")
             
             q_norm = np.linalg.norm(q_vec)
             best_sim = 0.0
-            best_q = None
+            best_msg = None
             if q_norm > 0:
-                for hist_q, h_vec in zip(unique_questions, hist_vecs):
+                for hist_msg, h_vec in zip(semantic_candidates, hist_vecs):
                     h_norm = np.linalg.norm(h_vec)
                     if h_norm > 0:
                         sim = np.dot(q_vec, h_vec) / (q_norm * h_norm)
                         if sim > best_sim:
                             best_sim = sim
-                            best_q = hist_q
+                            best_msg = hist_msg
             
-            if best_sim >= 0.92 and best_q:
-                matched_user_msg = db.query(Message).join(Conversation).filter(
-                    Conversation.user_id == user_id,
-                    Message.role == "user",
-                    Message.content == best_q
-                ).first()
-                if matched_user_msg:
-                    matched_assist_msg = db.query(Message).filter(
-                        Message.conversation_id == matched_user_msg.conversation_id,
-                        Message.id > matched_user_msg.id,
-                        Message.role == "assistant"
-                    ).order_by(Message.id.asc()).first()
-                    
-                    if matched_assist_msg:
-                        log.info(f"Smart Cache HIT: Matched question '{q}' with '{best_q}' (score: {best_sim:.3f})")
-                        citations = json.loads(matched_assist_msg.citations) if matched_assist_msg.citations else []
-                        
-                        assist_msg = Message(
-                            conversation_id=req.session_id,
-                            role="assistant",
-                            content=matched_assist_msg.content,
-                            citations=matched_assist_msg.citations,
-                            selected_docs=selected_docs_json,
-                            timestamp=datetime.utcnow()
-                        )
-                        db.add(assist_msg)
-                        db.commit()
-                        db.refresh(user_msg)
-                        db.refresh(assist_msg)
-                        _create_notification(
-                            user_id,
-                            type="ai_answer",
-                            text=f'Your answer for "{q[:40]}..." is ready.',
-                            link=f"/chat?id={req.session_id}&msgId={assist_msg.id}",
-                            title="Query Answer Completed",
-                            target_conv_id=req.session_id,
-                            target_msg_id=assist_msg.id
-                        )
-                        
-                        return {
-                            "answer": matched_assist_msg.content,
-                            "citations": citations,
-                            "confidence": 100,
-                            "session_id": req.session_id,
-                            "cached": True,
-                            "message_id": assist_msg.id,
-                            "user_message_id": user_msg.id,
-                        }
+            if best_sim >= 0.92 and best_msg:
+                matched_assist_msg = _assistant_after(best_msg)
+                if matched_assist_msg:
+                    log.info(f"Smart Cache HIT: Matched question '{q}' with '{best_msg.content}' (score: {best_sim:.3f})")
+                    citations = json.loads(matched_assist_msg.citations) if matched_assist_msg.citations else []
+
+                    assist_msg = Message(
+                        conversation_id=req.session_id,
+                        role="assistant",
+                        content=matched_assist_msg.content,
+                        citations=matched_assist_msg.citations,
+                        selected_docs=selected_docs_json,
+                        timestamp=datetime.utcnow()
+                    )
+                    db.add(assist_msg)
+                    db.commit()
+                    db.refresh(user_msg)
+                    db.refresh(assist_msg)
+                    _create_notification(
+                        user_id,
+                        type="ai_answer",
+                        text=f'Your answer for "{q[:40]}..." is ready.',
+                        link=f"/chat?id={req.session_id}&msgId={assist_msg.id}",
+                        title="Query Answer Completed",
+                        target_conv_id=req.session_id,
+                        target_msg_id=assist_msg.id
+                    )
+
+                    return {
+                        "answer": matched_assist_msg.content,
+                        "citations": citations,
+                        "confidence": 100,
+                        "session_id": req.session_id,
+                        "cached": True,
+                        "cache_type": "semantic_history",
+                        "cache_similarity": round(float(best_sim), 3),
+                        "message_id": assist_msg.id,
+                        "user_message_id": user_msg.id,
+                    }
         except Exception as e:
             log.warning(f"Smart History Lookup failed: {e}")
 
@@ -1288,7 +1340,7 @@ async def query(req: QueryRequest, current_user: dict = Depends(get_current_user
             model=OLLAMA_MODEL,
             messages=[{"role": "user", "content": prompt}],
             options={
-                "num_predict": 4096,
+                "num_predict": 1024,
                 "temperature": LLM_TEMPERATURE,
             },
         )
@@ -1625,4 +1677,4 @@ async def view_document_html(filename: str, current_user: dict = Depends(get_cur
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("api:app", host=API_HOST, port=API_PORT, reload=True)

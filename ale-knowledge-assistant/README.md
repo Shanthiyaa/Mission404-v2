@@ -1,4 +1,4 @@
-# ALE Knowledge Assistant — Frontend
+# ALE Knowledge Assistant - Frontend
 
 Enterprise React UI for the ALE internal AI document assistant.
 
@@ -9,28 +9,30 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173
+`npm run dev` starts both the FastAPI backend on http://127.0.0.1:8001 and the Vite frontend on http://localhost:5173.
 
-## Login credentials (demo)
-Any email/password works — click "Sign in" to enter.
+## Login credentials
+
+Create an account with Sign up first, then use that email and password to sign in.
 
 ## Pages
-- `/login` — Sign in
-- `/signup` — Create account
-- `/dashboard` — Stats, activity, recent docs
-- `/chat` — AI assistant with typing animation, citations, confidence scores
-- `/upload` — Drag-and-drop PDF upload with pipeline status
-- `/knowledge-base` — Searchable, filterable document table
-- `/settings` — Theme toggle, model selector, preferences
+
+- `/login` - Sign in
+- `/signup` - Create account
+- `/dashboard` - Stats, activity, recent docs
+- `/chat` - AI assistant with typing animation, citations, confidence scores
+- `/upload` - Drag-and-drop PDF upload with pipeline status
+- `/knowledge-base` - Searchable, filterable document table
+- `/settings` - Theme toggle, model selector, preferences
 
 ## Tech stack
+
 - React 18 + TypeScript
 - React Router v6
-- Tailwind CSS (dark mode via `class` strategy)
+- Tailwind CSS
 - Lucide React icons
-- Framer Motion (installed, ready to use)
+- Framer Motion
 
-## Connecting to your Python backend
-The chat page currently simulates responses. To wire it to your real Streamlit/Python backend:
-1. Replace the `setTimeout` in `Chat.tsx` `send()` function with a real `fetch()` call to your API
-2. Your API should accept `{ question: string }` and return `{ answer: string, source_file: string, page: number, confidence: number }`
+## Backend
+
+The frontend calls `/api/*`. In development, Vite proxies those requests to the FastAPI app in `../ai-document-qa-system-2026`.
