@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # 1. FastAPI Python Backend API
+  backend:
+    build:
+      context: ./ai-document-qa-system-2026
+      dockerfile: Dockerfile
+    container_name: ale-backend
+    volumes:
+      # Mount paths to persist uploaded documents, sqlite db, and FAISS indices
+      - ./ai-document-qa-system-2026/uploaded_docs:/app/uploaded_docs
+      - ./ai-document-qa-system-2026/data:/app/data
+    environment:
+      - DATABASE_URL=sqlite:////app/data/app.db
+      - JWT_SECRET=SUPER_SECRET_SECURITY_KEY_ALE_ASSISTANT_2026
+      # Default to GPU (cuda). Resolver will automatically fall back to CPU if no GPU/CUDA is available.
+      - EMBEDDING_DEVICE=cuda
+      # Point to the Ollama container running in this compose network
+      - OLLAMA_BASE_URL=http://ollama:11434
+    ports:
+      - "8001:8001"
+    depends_on:
+      - ollama
+    extra_hosts:
+      # Allows backend container to communicate with host machine if you run Ollama on host instead
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  # 2. React Frontend App (served via Nginx reverse proxy)
+  frontend:
+    build:
+      context: ./ale-knowledge-assistant
+      dockerfile: Dockerfile
+    container_name: ale-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # 3. Ollama LLM Engine Container
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ale-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    # ── GPU ACCELERATION CONFIG ──────────────────────────────────────────────
+    # If the hosting device has an NVIDIA GPU and NVIDIA Container Toolkit installed,
+    # uncomment the block below to enable GPU acceleration for Ollama.
+    # Otherwise, Ollama will run in CPU-only mode.
+    # ──────────────────────────────────────────────────────────────────────────
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  ollama_data:
