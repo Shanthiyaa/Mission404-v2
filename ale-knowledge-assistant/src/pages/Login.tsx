@@ -6,6 +6,7 @@ import {
   CheckCircle2, Database
 } from 'lucide-react'
 import { useGlobalState } from '../context/GlobalState'
+import logo from '../logo.png'
 
 interface LoginProps { onToggleDark: () => void }
 
@@ -29,62 +30,50 @@ const FEATURES = [
   },
   {
     icon: Shield,
-    title: 'Enterprise-Grade',
-    desc: 'Data stays on your infrastructure. No external API calls. Full control.',
+    title: 'Locked-Down Privacy',
+    desc: 'Your documents are processed in a completely isolated environment.',
   },
 ]
 
 const STATS = [
-  { value: '10x', label: 'Faster than manual search', icon: Zap },
-  { value: '95%', label: 'Answer accuracy rate', icon: CheckCircle2 },
-  { value: '100 plus', label: 'document supported', icon: Database },
+  { value: '100x', label: 'Faster than manual search', icon: Zap },
+  { value: '90+', label: 'documents supported', icon: Database },
 ]
-
-export default function Login({ onToggleDark }: LoginProps) {
-  const { login } = useGlobalState()
-  const [mode, setMode]           = useState<AuthMode>('login')
+export default function Login() {
+  const { loginRegular } = useGlobalState()
+  const [name, setName]           = useState('')
   const [email, setEmail]         = useState('')
-  const [password, setPassword]   = useState('')
-  const [showPass, setShowPass]   = useState(false)
+  const [role, setRole]           = useState('Technical Specialist')
   const [errors, setErrors]       = useState<Record<string, string>>({})
-  const [forgotSent, setForgotSent] = useState(false)
   const [loading, setLoading]     = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
   const [showSuccess, setShowSuccess] = useState(!!location.state?.signupSuccess)
 
-  const validate = () => {
-    const e: Record<string, string> = {}
-    if (!email.trim()) e.email = 'Email is required'
-    else if (!/\S+@\S+\.\S+/.test(email)) e.email = 'Enter a valid email'
-    if (mode !== 'forgot') {
-      if (!password) e.password = 'Password is required'
-      else if (password.length < 8) e.password = 'Enter 8 character password'
-    }
-    setErrors(e)
-    return Object.keys(e).length === 0
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!validate()) return
-    if (mode === 'forgot') { setForgotSent(true); return }
+    
+    const errs: Record<string, string> = {}
+    if (!name.trim()) errs.name = 'Name is required'
+    if (!email.trim()) errs.email = 'Email is required'
+    else if (!/\S+@\S+\.\S+/.test(email)) errs.email = 'Enter a valid email'
+    setErrors(errs)
+    if (Object.keys(errs).length > 0) return
 
-    if (mode === 'login') {
-      setLoading(true)
-      try {
-        await login(email, password)
-        navigate('/dashboard')
-      } catch (err: any) {
-        setErrors({ email: err.message || 'Incorrect email or password.' })
-      } finally {
-        setLoading(false)
-      }
+    if (role === 'Admin') {
+      navigate('/admin-login')
+      return
     }
-  }
 
-  const switchMode = (m: AuthMode) => {
-    setMode(m); setErrors({}); setForgotSent(false)
+    setLoading(true)
+    try {
+      await loginRegular(name.trim(), email.trim(), role)
+      navigate('/upload')
+    } catch (err: any) {
+      setErrors({ email: err.message || 'Login failed.' })
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -125,32 +114,20 @@ export default function Login({ onToggleDark }: LoginProps) {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             border: '1px solid rgba(255,255,255,0.2)',
           }}>
-            <Brain size={20} color="white" />
+            <img src={logo} alt="AL Docbot Logo" style={{ width: '24px', height: '24px', objectFit: 'contain' }} />
           </div>
           <div>
             <div style={{ color: 'rgba(255,255,255,0.95)', fontWeight: 600, fontSize: '15px', letterSpacing: '-0.01em' }}>
-              ALE Knowledge
+              AL Docbot
             </div>
             <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: '11px', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-              Alcatel-Lucent Enterprise
+              Alcatel Lucent
             </div>
           </div>
         </div>
 
         {/* Middle: Hero */}
         <div className="relative z-10">
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: '6px',
-            background: 'rgba(255,255,255,0.1)',
-            border: '1px solid rgba(255,255,255,0.15)',
-            borderRadius: '20px', padding: '4px 12px',
-            marginBottom: '24px',
-          }}>
-            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#a3e635' }} />
-            <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', fontWeight: 500 }}>
-              RAG-powered · Local LLM · Zero data leakage
-            </span>
-          </div>
 
           <h1 style={{
             fontSize: '44px', fontWeight: 700, lineHeight: 1.12,
@@ -161,7 +138,7 @@ export default function Login({ onToggleDark }: LoginProps) {
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
             }}>
-              Ask. Discover. Resolve
+              Ask - Discover - Resolve
             </span>
           </h1>
 
@@ -169,13 +146,12 @@ export default function Login({ onToggleDark }: LoginProps) {
             color: 'rgba(255,255,255,0.6)', fontSize: '16px',
             lineHeight: 1.6, maxWidth: '440px', marginBottom: '36px',
           }}>
-            Stop digging through folders. Ask a question, get a precise answer
-            with the exact page and section it came from.
+            Intelligent document retrieval starts with a question and ends with a source-backed answer.
           </p>
 
           {/* Stats row */}
           <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
+            display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)',
             gap: '12px', marginBottom: '40px',
           }}>
             {STATS.map(({ value, label, icon: Icon }) => (
@@ -225,7 +201,6 @@ export default function Login({ onToggleDark }: LoginProps) {
           </div>
         </div>
 
-
       </div>
 
       {/* ── RIGHT: Auth Card ──────────────────────────────────── */}
@@ -239,11 +214,11 @@ export default function Login({ onToggleDark }: LoginProps) {
               background: 'linear-gradient(135deg, #7c3aed, #a855f7)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              <Brain size={18} color="white" />
+              <img src={logo} alt="AL Docbot Logo" style={{ width: '22px', height: '22px', objectFit: 'contain' }} />
             </div>
             <div>
-              <div className="font-semibold text-gray-900 dark:text-white text-[15px]">ALE Knowledge</div>
-              <div className="text-[11px] text-gray-400 uppercase tracking-wider">Alcatel-Lucent Enterprise</div>
+              <div className="font-semibold text-gray-900 dark:text-white text-[15px]">AL Docbot</div>
+              <div className="text-[11px] text-gray-400 uppercase tracking-wider">Alcatel Lucent</div>
             </div>
           </div>
 
@@ -253,25 +228,15 @@ export default function Login({ onToggleDark }: LoginProps) {
 
             {/* Header */}
             <div className="mb-6">
-              {mode === 'login' && (
-                <>
-                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white tracking-tight">Welcome back</h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Sign in to your ALE Knowledge account</p>
-                </>
-              )}
-              {mode === 'forgot' && (
-                <>
-                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white tracking-tight">Reset password</h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">We'll send a reset link to your email</p>
-                </>
-              )}
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white tracking-tight">AL Docbot Portal</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Select your role to access the assistant</p>
             </div>
 
             {showSuccess && (
               <div className="mb-6 p-4 bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 rounded-xl text-sm flex items-center gap-3">
                 <CheckCircle2 size={18} className="text-purple-600 dark:text-purple-400 flex-shrink-0" />
                 <div className="flex-1 leading-normal">
-                  Account created successfully! Please sign in.
+                  Admin account created successfully! Please sign in.
                 </div>
                 <button onClick={() => setShowSuccess(false)} className="text-purple-400 hover:text-purple-600 dark:hover:text-purple-200 font-semibold text-lg leading-none">
                   &times;
@@ -279,140 +244,94 @@ export default function Login({ onToggleDark }: LoginProps) {
               </div>
             )}
 
-            {/* Forgot success state */}
-            {forgotSent ? (
-              <div className="text-center py-6">
-                <div style={{
-                  width: '56px', height: '56px', borderRadius: '50%',
-                  background: 'rgba(124,58,237,0.1)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  margin: '0 auto 16px',
-                }}>
-                  <CheckCircle2 size={28} color="#7c3aed" />
-                </div>
-                <div className="font-semibold text-gray-900 dark:text-white mb-1">Check your email</div>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-                  We've sent a reset link to <strong>{email}</strong>
-                </p>
-                <button
-                  onClick={() => switchMode('login')}
-                  className="text-sm text-purple-600 hover:text-purple-700 font-medium"
-                >
-                  ← Back to sign in
-                </button>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Name */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  placeholder="Enter your name"
+                  className={`w-full rounded-lg border px-3.5 py-2.5 text-sm outline-none transition-all
+                    dark:bg-gray-800 dark:text-white
+                    ${errors.name
+                      ? 'border-red-400 focus:border-red-400 focus:ring-2 focus:ring-red-100'
+                      : 'border-gray-200 dark:border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 dark:focus:ring-purple-900/30'
+                    }`}
+                />
+                {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
               </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="space-y-4">
 
-                {/* Email */}
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
-                    Work email
-                  </label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    placeholder="you@ale.com"
-                    className={`w-full rounded-lg border px-3.5 py-2.5 text-sm outline-none transition-all
-                      dark:bg-gray-800 dark:text-white
-                      ${errors.email
-                        ? 'border-red-400 focus:border-red-400 focus:ring-2 focus:ring-red-100'
-                        : 'border-gray-200 dark:border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 dark:focus:ring-purple-900/30'
-                      }`}
-                  />
-                  {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
-                </div>
+              {/* Email */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
+                  Work Email
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="you@ale.com"
+                  className={`w-full rounded-lg border px-3.5 py-2.5 text-sm outline-none transition-all
+                    dark:bg-gray-800 dark:text-white
+                    ${errors.email
+                      ? 'border-red-400 focus:border-red-400 focus:ring-2 focus:ring-red-100'
+                      : 'border-gray-200 dark:border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 dark:focus:ring-purple-900/30'
+                    }`}
+                />
+                {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
+              </div>
 
-                {/* Password */}
-                {mode !== 'forgot' && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Password</label>
-                      {mode === 'login' && (
-                        <button
-                          type="button"
-                          onClick={() => switchMode('forgot')}
-                          className="text-xs text-purple-600 hover:text-purple-700 font-medium"
-                        >
-                          Forgot password?
-                        </button>
-                      )}
-                    </div>
-                    <div className="relative">
-                      <input
-                        type={showPass ? 'text' : 'password'}
-                        value={password}
-                        onChange={e => setPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className={`w-full rounded-lg border px-3.5 py-2.5 pr-10 text-sm outline-none transition-all
-                          dark:bg-gray-800 dark:text-white
-                          ${errors.password
-                            ? 'border-red-400 focus:border-red-400 focus:ring-2 focus:ring-red-100'
-                            : 'border-gray-200 dark:border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 dark:focus:ring-purple-900/30'
-                          }`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPass(s => !s)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                      >
-                        {showPass ? <EyeOff size={15} /> : <Eye size={15} />}
-                      </button>
-                    </div>
-                    {errors.password && <p className="text-xs text-red-500 mt-1">{errors.password}</p>}
-                  </div>
-                )}
-
-                {/* Submit */}
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold text-white transition-all"
-                  style={{
-                    background: loading
-                      ? '#9ca3af'
-                      : 'linear-gradient(135deg, #7c3aed 0%, #9333ea 100%)',
-                    boxShadow: loading ? 'none' : '0 2px 12px rgba(124,58,237,0.4)',
-                  }}
+              {/* Role Dropdown */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
+                  Your Role
+                </label>
+                <select
+                  value={role}
+                  onChange={e => setRole(e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3.5 py-2.5 text-sm dark:text-white outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 dark:focus:ring-purple-900/30 transition-all cursor-pointer"
                 >
-                  {loading ? (
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <>
-                      {mode === 'login' && 'Sign in'}
-                      {mode === 'forgot' && 'Send reset link'}
-                      <ArrowRight size={15} />
-                    </>
-                  )}
-                </button>
-              </form>
-            )}
+                  <option value="Technical Specialist">Technical Specialist</option>
+                  <option value="Senior Technical Specialist">Senior Technical Specialist</option>
+                  <option value="Tech Manager">Tech Manager</option>
+                  <option value="Senior Tech Manager">Senior Tech Manager</option>
+                  <option value="Director">Director</option>
+                  <option value="TEC Expert">TEC Expert</option>
+                  <option value="TAC Assistant">TAC Assistant</option>
+                  <option value="VIP Expert">VIP Expert</option>
+                  <option value="Admin">Admin</option>
+                </select>
+              </div>
 
-            {/* Mode switcher */}
-            {!forgotSent && (
-              <p className="text-center text-xs text-gray-500 mt-5">
-                {mode === 'login' ? (
-                  <>Don't have an account?{' '}
-                    <button onClick={() => navigate('/signup')} className="text-purple-600 font-semibold hover:text-purple-700">
-                      Sign up
-                    </button>
-                  </>
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold text-white transition-all"
+                style={{
+                  background: loading
+                    ? '#9ca3af'
+                    : 'linear-gradient(135deg, #7c3aed 0%, #9333ea 100%)',
+                  boxShadow: loading ? 'none' : '0 2px 12px rgba(124,58,237,0.4)',
+                }}
+              >
+                {loading ? (
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 ) : (
-                  <>Already have an account?{' '}
-                    <button onClick={() => switchMode('login')} className="text-purple-600 font-semibold hover:text-purple-700">
-                      Sign in
-                    </button>
+                  <>
+                    {role === 'Admin' ? 'Continue to Admin Login' : 'Enter Application'}
+                    <ArrowRight size={15} />
                   </>
                 )}
-              </p>
-            )}
+              </button>
+            </form>
           </div>
 
-          {/* Footer */}
-          <p className="text-center text-xs text-gray-400 mt-5">
-            © 2026 Alcatel-Lucent Enterprise · Internal tool · Confidential
-          </p>
+
         </div>
       </div>
     </div>

@@ -6,7 +6,7 @@ import { updateUserProfile } from '../api/client'
 interface SettingsProps {
   dark: boolean
   onToggleDark: () => void
-  user: { name: string; display_name?: string; email: string; department: string; profile_picture?: string } | null
+  user: { name: string; display_name?: string; email: string; department: string; profile_picture?: string; role?: string } | null
 }
 
 const MODELS = [
@@ -56,6 +56,8 @@ export default function Settings({ dark, onToggleDark, user }: SettingsProps) {
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
+  const isNormalUser = user?.role !== 'Admin'
+
   const handleProfilePictureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
@@ -91,13 +93,13 @@ export default function Settings({ dark, onToggleDark, user }: SettingsProps) {
       return
     }
 
-    if (formData.new_password) {
+    if (!isNormalUser && formData.new_password) {
       if (!formData.current_password) {
         setErrorMsg('Current password is required to update password.')
         return
       }
-      if (formData.new_password.length < 6) {
-        setErrorMsg('New password must be at least 6 characters.')
+      if (formData.new_password.length < 8) {
+        setErrorMsg('New password must be at least 8 characters.')
         return
       }
       if (formData.new_password !== formData.confirm_password) {
@@ -113,8 +115,8 @@ export default function Settings({ dark, onToggleDark, user }: SettingsProps) {
         display_name: formData.display_name,
         email: formData.email,
         profile_picture: formData.profile_picture || undefined,
-        current_password: formData.current_password || undefined,
-        new_password: formData.new_password || undefined
+        current_password: (!isNormalUser && formData.current_password) ? formData.current_password : undefined,
+        new_password: (!isNormalUser && formData.new_password) ? formData.new_password : undefined
       })
 
       updateUser(res.user, res.access_token)
@@ -145,12 +147,6 @@ export default function Settings({ dark, onToggleDark, user }: SettingsProps) {
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-4">
           <div className="card">
-            <h2 className="text-sm font-medium text-gray-900 dark:text-white mb-1 pb-2 border-b border-gray-50 dark:border-gray-800">Appearance</h2>
-            <SettingRow label="Dark mode" sub="Switch to dark theme" right={<Toggle on={dark} onToggle={onToggleDark} />} />
-            <SettingRow label="Compact view" sub="Reduce spacing in lists" right={<Toggle on={compact} onToggle={() => setCompact(c => !c)} />} />
-          </div>
-
-          <div className="card">
             <h2 className="text-sm font-medium text-gray-900 dark:text-white mb-3 pb-2 border-b border-gray-50 dark:border-gray-800">Profile</h2>
             {isEditing ? (
               <form onSubmit={handleSubmit} className="space-y-3 mt-3">
@@ -173,7 +169,7 @@ export default function Settings({ dark, onToggleDark, user }: SettingsProps) {
                       type="file"
                       accept="image/*"
                       onChange={handleProfilePictureChange}
-                      className="text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-purple-50 file:text-purple-705 hover:file:bg-purple-100 cursor-pointer"
+                      className="text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-purple-50 file:text-purple-755 hover:file:bg-purple-100 cursor-pointer"
                     />
                   </div>
                 </div>
@@ -208,32 +204,34 @@ export default function Settings({ dark, onToggleDark, user }: SettingsProps) {
                   />
                 </div>
 
-                <div className="pt-2 border-t border-gray-100 dark:border-gray-800 mt-2">
-                  <h3 className="text-xs font-bold text-gray-700 dark:text-gray-300 mb-2">Change Password (optional)</h3>
-                  <div className="space-y-2">
-                    <input
-                      type="password"
-                      value={formData.current_password}
-                      onChange={e => setFormData(prev => ({ ...prev, current_password: e.target.value }))}
-                      placeholder="Current Password"
-                      className="w-full input text-xs py-1.5 px-2.5"
-                    />
-                    <input
-                      type="password"
-                      value={formData.new_password}
-                      onChange={e => setFormData(prev => ({ ...prev, new_password: e.target.value }))}
-                      placeholder="New Password"
-                      className="w-full input text-xs py-1.5 px-2.5"
-                    />
-                    <input
-                      type="password"
-                      value={formData.confirm_password}
-                      onChange={e => setFormData(prev => ({ ...prev, confirm_password: e.target.value }))}
-                      placeholder="Confirm New Password"
-                      className="w-full input text-xs py-1.5 px-2.5"
-                    />
+                {!isNormalUser && (
+                  <div className="pt-2 border-t border-gray-100 dark:border-gray-800 mt-2">
+                    <h3 className="text-xs font-bold text-gray-700 dark:text-gray-300 mb-2">Change Password (optional)</h3>
+                    <div className="space-y-2">
+                      <input
+                        type="password"
+                        value={formData.current_password}
+                        onChange={e => setFormData(prev => ({ ...prev, current_password: e.target.value }))}
+                        placeholder="Current Password"
+                        className="w-full input text-xs py-1.5 px-2.5"
+                      />
+                      <input
+                        type="password"
+                        value={formData.new_password}
+                        onChange={e => setFormData(prev => ({ ...prev, new_password: e.target.value }))}
+                        placeholder="New Password"
+                        className="w-full input text-xs py-1.5 px-2.5"
+                      />
+                      <input
+                        type="password"
+                        value={formData.confirm_password}
+                        onChange={e => setFormData(prev => ({ ...prev, confirm_password: e.target.value }))}
+                        placeholder="Confirm New Password"
+                        className="w-full input text-xs py-1.5 px-2.5"
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="flex gap-2 pt-2">
                   <button
@@ -297,30 +295,54 @@ export default function Settings({ dark, onToggleDark, user }: SettingsProps) {
         </div>
 
         <div className="space-y-4">
-          <div className="card">
-            <h2 className="text-sm font-medium text-gray-900 dark:text-white mb-3 pb-2 border-b border-gray-50 dark:border-gray-800">AI model</h2>
-            <div className="grid grid-cols-2 gap-2">
-              {MODELS.map(m => (
-                <div
-                  key={m.name}
-                  onClick={() => setModel(m.name)}
-                  className={clsx(
-                    'border rounded-lg p-3 cursor-pointer transition-colors',
-                    model === m.name ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20' : 'border-gray-100 dark:border-gray-700 hover:border-gray-200'
-                  )}
-                >
-                  <div className="text-xs font-medium text-gray-900 dark:text-white">{m.name}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">{m.desc}</div>
-                </div>
-              ))}
+          {isNormalUser ? (
+            <div className="card">
+              <h2 className="text-sm font-medium text-gray-900 dark:text-white mb-1 pb-2 border-b border-gray-50 dark:border-gray-800">Preferences</h2>
+              <SettingRow 
+                label="Multifile Upload" 
+                sub="Enable searching across multiple documents at once" 
+                right={<Toggle on={multiDoc} onToggle={() => setMultiDoc(!multiDoc)} />} 
+              />
+              <SettingRow 
+                label="Show source citations" 
+                sub="Always display source references in answers" 
+                right={<Toggle on={showCitations} onToggle={() => setShowCitations(!showCitations)} />} 
+              />
             </div>
-          </div>
+          ) : (
+            <>
+              <div className="card">
+                <h2 className="text-sm font-medium text-gray-900 dark:text-white mb-1 pb-2 border-b border-gray-50 dark:border-gray-800">Appearance</h2>
+                <SettingRow label="Dark mode" sub="Switch to dark theme" right={<Toggle on={dark} onToggle={onToggleDark} />} />
+                <SettingRow label="Compact view" sub="Reduce spacing in lists" right={<Toggle on={compact} onToggle={() => setCompact(c => !c)} />} />
+              </div>
 
-          <div className="card">
-            <h2 className="text-sm font-medium text-gray-900 dark:text-white mb-1 pb-2 border-b border-gray-50 dark:border-gray-800">Search preferences</h2>
-            <SettingRow label="Multi-document search" sub="Search across all indexed files" right={<Toggle on={multiDoc} onToggle={() => setMultiDoc(!multiDoc)} />} />
-            <SettingRow label="Show source citations" sub="Always display source references" right={<Toggle on={showCitations} onToggle={() => setShowCitations(!showCitations)} />} />
-          </div>
+              <div className="card">
+                <h2 className="text-sm font-medium text-gray-900 dark:text-white mb-3 pb-2 border-b border-gray-50 dark:border-gray-800">AI model</h2>
+                <div className="grid grid-cols-2 gap-2">
+                  {MODELS.map(m => (
+                    <div
+                      key={m.name}
+                      onClick={() => setModel(m.name)}
+                      className={clsx(
+                        'border rounded-lg p-3 cursor-pointer transition-colors',
+                        model === m.name ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20' : 'border-gray-100 dark:border-gray-700 hover:border-gray-200'
+                      )}
+                    >
+                      <div className="text-xs font-medium text-gray-900 dark:text-white">{m.name}</div>
+                      <div className="text-xs text-gray-400 mt-0.5">{m.desc}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="card">
+                <h2 className="text-sm font-medium text-gray-900 dark:text-white mb-1 pb-2 border-b border-gray-50 dark:border-gray-800">Search preferences</h2>
+                <SettingRow label="Multi-document search" sub="Search across all indexed files" right={<Toggle on={multiDoc} onToggle={() => setMultiDoc(!multiDoc)} />} />
+                <SettingRow label="Show source citations" sub="Always display source references" right={<Toggle on={showCitations} onToggle={() => setShowCitations(!showCitations)} />} />
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

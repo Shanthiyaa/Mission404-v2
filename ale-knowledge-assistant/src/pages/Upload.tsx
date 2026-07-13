@@ -24,15 +24,18 @@ const FILE_TYPE_EXT_MAP: Record<string, string> = {
 }
 
 export default function Upload() {
-  const { files, startUpload, removeUploadFile } = useGlobalState()
+  const { files, startUpload, removeUploadFile, documents, user } = useGlobalState()
   const [fileType, setFileType] = useState('PDF')
   const [cat, setCat]           = useState('User guide')
   const [dragging, setDragging] = useState(false)
   const inputRef                = useRef<HTMLInputElement>(null)
 
+  const isNormalUser = user?.role !== 'Admin'
+  const reachedLimit = isNormalUser && documents.length >= 100
+
   // ── Handle file selection ─────────────────────────────────────────────────
   const handleFiles = async (selected: FileList | null) => {
-    if (!selected) return
+    if (!selected || reachedLimit) return
     const expectedExt = FILE_TYPE_EXT_MAP[fileType]
     const catApiValue = CATEGORY_API_MAP[cat] || 'unknown'
     await startUpload(selected, fileType, cat, expectedExt, catApiValue)
@@ -50,28 +53,43 @@ export default function Upload() {
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Add PDFs or ZIP archives to your knowledge base for AI-powered search</p>
       </div>
 
+      {reachedLimit && (
+        <div className="mb-5 flex items-center gap-3 bg-red-50 dark:bg-red-900/20 border border-red-105 dark:border-red-800 text-red-600 dark:text-red-400 p-4 rounded-xl text-sm font-medium">
+          <AlertCircle size={18} className="flex-shrink-0" />
+          <div className="flex-1 leading-normal">
+            You have reached the maximum document limit of 100. Please delete existing documents before uploading new documents.
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-4">
         {/* ── Left column: drop zone + category ── */}
         <div>
           <div
-            onDragOver={e  => { e.preventDefault(); setDragging(true) }}
+            onDragOver={e  => { e.preventDefault(); if (!reachedLimit) setDragging(true) }}
             onDragLeave={() => setDragging(false)}
             onDrop={e => {
               e.preventDefault()
               setDragging(false)
-              handleFiles(e.dataTransfer.files)
+              if (!reachedLimit) handleFiles(e.dataTransfer.files)
             }}
-            onClick={() => inputRef.current?.click()}
+            onClick={() => { if (!reachedLimit) inputRef.current?.click() }}
             className={clsx(
-              'border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors mb-4',
-              dragging
-                ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
-                : 'border-purple-200 dark:border-purple-800 hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/10'
+              'border-2 border-dashed rounded-xl p-10 text-center transition-colors mb-4',
+              reachedLimit
+                ? 'border-gray-250 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 cursor-not-allowed opacity-60'
+                : dragging
+                  ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 cursor-pointer'
+                  : 'border-purple-200 dark:border-purple-800 hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/10 cursor-pointer'
             )}
           >
-            <CloudUpload size={32} className="text-purple-500 mx-auto mb-3" />
-            <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">Drop {fileType.split(' ')[0]} here</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400 mb-3">or click to browse · up to 200 MB per file</div>
+            <CloudUpload size={32} className={clsx('mx-auto mb-3', reachedLimit ? 'text-gray-400' : 'text-purple-500')} />
+            <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">
+              {reachedLimit ? 'Upload Blocked' : `Drop ${fileType.split(' ')[0]} here`}
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+              {reachedLimit ? 'Please delete documents to free up space' : 'or click to browse · up to 200 MB per file'}
+            </div>
             <div className="flex gap-2 justify-center flex-wrap">
               {['User guides', 'Release notes', 'SQA test cases', 'KCS articles'].map(t => (
                 <span key={t} className="badge bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">{t}</span>
@@ -84,6 +102,7 @@ export default function Upload() {
               multiple
               className="hidden"
               onChange={e => handleFiles(e.target.files)}
+              disabled={reachedLimit}
             />
           </div>
 

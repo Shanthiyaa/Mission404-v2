@@ -51,10 +51,11 @@ def verify_password(password: str, hashed_password: str) -> bool:
     except Exception:
         return False
 
-def create_access_token(user_id: int, email: str) -> str:
+def create_access_token(user_id: int, email: str, role: Optional[str] = None) -> str:
     payload = {
         "user_id": user_id,
         "email": email,
+        "role": role,
         "exp": time.time() + 7 * 24 * 3600  # 7 days
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -156,6 +157,13 @@ def get_current_user(
         return payload
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Session expired or invalid authorization token.")
+
+def check_admin(current_user: dict = Depends(get_current_user), db = Depends(get_db)):
+    user_id = current_user["user_id"]
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user or user.role != "Admin":
+        raise HTTPException(status_code=403, detail="Access denied. Administrator privileges required.")
+    return user
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  Lifespan
@@ -583,8 +591,16 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
+class RegularLoginRequest(BaseModel):
+    name: str
+    email: str
+    role: str
+
 @app.post("/api/auth/signup")
 async def signup(req: SignupRequest, db = Depends(get_db)):
+    if len(req.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+        
     existing = db.query(User).filter(User.email == req.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="This email is already registered. Please sign in.")
@@ -595,23 +611,30 @@ async def signup(req: SignupRequest, db = Depends(get_db)):
         email=req.email,
         hashed_password=hashed,
         department=req.department,
+        role="Admin",  # Signup page is only for admins
         last_activity=datetime.utcnow()
     )
     db.add(user)
     db.commit()
     db.refresh(user)
-    return {"success": True, "message": "User registered successfully."}
+    return {"success": True, "message": "Admin registered successfully."}
 
 @app.post("/api/auth/login")
 async def login(req: LoginRequest, db = Depends(get_db)):
+    if len(req.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+        
     user = db.query(User).filter(User.email == req.email).first()
-    if not user or not verify_password(req.password, user.hashed_password):
+    if not user or user.role != "Admin":
+        raise HTTPException(status_code=401, detail="Incorrect email or password, or access denied.")
+        
+    if not verify_password(req.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password.")
     
     user.last_activity = datetime.utcnow()
     db.commit()
 
-    token = create_access_token(user.id, user.email)
+    token = create_access_token(user.id, user.email, user.role)
     return {
         "access_token": token,
         "token_type": "bearer",
@@ -620,7 +643,48 @@ async def login(req: LoginRequest, db = Depends(get_db)):
             "display_name": user.display_name or user.username,
             "email": user.email,
             "department": user.department,
-            "profile_picture": user.profile_picture
+            "profile_picture": user.profile_picture,
+            "role": user.role
+        }
+    }
+
+@app.post("/api/auth/login-regular")
+async def login_regular(req: RegularLoginRequest, db = Depends(get_db)):
+    if req.role == "Admin":
+        raise HTTPException(status_code=400, detail="Admins must log in via the Admin Login page.")
+        
+    user = db.query(User).filter(User.email == req.email).first()
+    if user:
+        user.username = req.name
+        user.role = req.role
+        user.last_activity = datetime.utcnow()
+    else:
+        import secrets
+        dummy_pass = secrets.token_hex(16)
+        user = User(
+            username=req.name,
+            email=req.email,
+            role=req.role,
+            hashed_password=hash_password(dummy_pass),
+            department="",
+            last_activity=datetime.utcnow()
+        )
+        db.add(user)
+    
+    db.commit()
+    db.refresh(user)
+
+    token = create_access_token(user.id, user.email, user.role)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "name": user.username,
+            "display_name": user.display_name or user.username,
+            "email": user.email,
+            "department": user.department or "",
+            "profile_picture": user.profile_picture,
+            "role": user.role
         }
     }
 
@@ -642,8 +706,9 @@ async def get_profile(current_user: dict = Depends(get_current_user), db = Depen
         "name": user.username,
         "display_name": user.display_name or user.username,
         "email": user.email,
-        "department": user.department,
-        "profile_picture": user.profile_picture
+        "department": user.department or "",
+        "profile_picture": user.profile_picture,
+        "role": user.role
     }
 
 class UpdateProfileRequest(BaseModel):
@@ -666,8 +731,8 @@ async def update_profile(req: UpdateProfileRequest, current_user: dict = Depends
             raise HTTPException(status_code=400, detail="Current password is required to update password.")
         if not verify_password(req.current_password, user.hashed_password):
             raise HTTPException(status_code=400, detail="Incorrect current password.")
-        if len(req.new_password) < 6:
-            raise HTTPException(status_code=400, detail="New password must be at least 6 characters.")
+        if len(req.new_password) < 8:
+            raise HTTPException(status_code=400, detail="New password must be at least 8 characters.")
         user.hashed_password = hash_password(req.new_password)
 
     if req.email and req.email != user.email:
@@ -688,7 +753,7 @@ async def update_profile(req: UpdateProfileRequest, current_user: dict = Depends
     db.commit()
     db.refresh(user)
 
-    token = create_access_token(user.id, user.email)
+    token = create_access_token(user.id, user.email, user.role)
     return {
         "success": True,
         "access_token": token,
@@ -696,10 +761,61 @@ async def update_profile(req: UpdateProfileRequest, current_user: dict = Depends
             "name": user.username,
             "display_name": user.display_name or user.username,
             "email": user.email,
-            "department": user.department,
-            "profile_picture": user.profile_picture
+            "department": user.department or "",
+            "profile_picture": user.profile_picture,
+            "role": user.role
         }
     }
+
+# ── Admin User Management Endpoints ───────────────────────────────────────────
+@app.get("/api/admin/users")
+async def admin_list_users(admin_user: User = Depends(check_admin), db = Depends(get_db)):
+    users = db.query(User).all()
+    return [
+        {
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "role": u.role or "Normal User",
+            "created_at": _utc_iso(u.created_at) if u.created_at else None
+        }
+        for u in users
+    ]
+
+@app.delete("/api/admin/users/{user_id}")
+async def admin_delete_user(user_id: int, admin_user: User = Depends(check_admin), db = Depends(get_db)):
+    if user_id == admin_user.id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own admin account.")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+        
+    user_docs = db.query(Document).filter(Document.user_id == user_id).all()
+    for doc in user_docs:
+        filename = doc.name
+        file_path = UPLOAD_PATH / filename
+        if file_path.exists():
+            try:
+                file_path.unlink()
+            except Exception as e:
+                log.error(f"Failed to unlink physical file {filename}: {e}")
+        with _faiss_lock:
+            try:
+                from member2.vector_store import delete_from_faiss_index
+                delete_from_faiss_index(filename)
+            except Exception as e:
+                log.error(f"Failed to delete {filename} from FAISS during user deletion: {e}")
+                
+    try:
+        from member2.retriever import clear_cache
+        clear_cache()
+    except Exception:
+        pass
+    _ensure_retriever()
+    
+    db.delete(user)
+    db.commit()
+    return {"success": True}
 
 # ── Notifications Endpoints ───────────────────────────────────────────────────
 @app.get("/api/notifications")
@@ -809,6 +925,18 @@ async def upload_document(
     db = Depends(get_db)
 ):
     user_id = current_user["user_id"]
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+        
+    if user.role != "Admin":
+        doc_count = db.query(Document).filter(Document.user_id == user_id).count()
+        if doc_count >= 100:
+            raise HTTPException(
+                status_code=400,
+                detail="You have reached the maximum document limit of 100. Please delete existing documents before uploading new documents."
+            )
+            
     filename_lower = file.filename.lower()
     is_zip = filename_lower.endswith(".zip")
     ext = Path(filename_lower).suffix.lower()
@@ -923,6 +1051,15 @@ async def upload_document(
             shutil.rmtree(temp_extract_dir, ignore_errors=True)
             dest.unlink(missing_ok=True)
             raise HTTPException(status_code=500, detail=f"Error processing ZIP contents: {e}")
+
+        if user.role != "Admin":
+            if doc_count + len(valid_zip_files) > 100:
+                shutil.rmtree(temp_extract_dir, ignore_errors=True)
+                dest.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=400,
+                    detail="You have reached the maximum document limit of 100. Please delete existing documents before uploading new documents."
+                )
 
         if duplicate_details and not valid_zip_files:
             shutil.rmtree(temp_extract_dir, ignore_errors=True)
@@ -1121,9 +1258,22 @@ async def query(req: QueryRequest, current_user: dict = Depends(get_current_user
     # 1. Get or create conversation record
     conv = db.query(Conversation).filter(Conversation.id == req.session_id, Conversation.user_id == user_id).first()
     if not conv:
+        conv_count = db.query(Conversation).filter(Conversation.user_id == user_id).count()
+        if conv_count >= 50:
+            raise HTTPException(
+                status_code=400,
+                detail="You have reached the maximum limit. Please delete old conversations to continue."
+            )
         conv = Conversation(id=req.session_id, user_id=user_id, title=q[:40])
         db.add(conv)
         db.commit()
+    else:
+        user_msg_count = db.query(Message).filter(Message.conversation_id == req.session_id, Message.role == "user").count()
+        if user_msg_count >= 50:
+            raise HTTPException(
+                status_code=400,
+                detail="You have reached the maximum limit. Please delete old conversations to continue."
+            )
 
     # Save user message
     selected_docs_json = json.dumps(req.doc_files) if req.doc_files else "[]"

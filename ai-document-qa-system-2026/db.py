@@ -55,6 +55,7 @@ class User(Base):
     profile_picture = Column(Text, nullable=True)
     last_activity = Column(DateTime, default=datetime.utcnow, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    role = Column(String(50), nullable=True)
 
     documents = relationship("Document", back_populates="owner", cascade="all, delete-orphan")
     conversations = relationship("Conversation", back_populates="owner", cascade="all, delete-orphan")
@@ -151,6 +152,8 @@ def init_db():
             conn.execute(text("ALTER TABLE users ADD COLUMN profile_picture TEXT"))
         if "last_activity" not in columns:
             conn.execute(text("ALTER TABLE users ADD COLUMN last_activity TIMESTAMP"))
+        if "role" not in columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(50)"))
         if "title" not in columns_notif:
             conn.execute(text("ALTER TABLE notifications ADD COLUMN title VARCHAR(200)"))
         if "target_conv_id" not in columns_notif:

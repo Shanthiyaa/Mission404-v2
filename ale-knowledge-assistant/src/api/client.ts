@@ -203,6 +203,7 @@ export interface AuthUser {
   email: string
   department: string
   profile_picture?: string
+  role?: string
 }
 
 export interface LoginResponse {
@@ -215,6 +216,13 @@ export async function authLogin(email: string, password: string): Promise<LoginR
   return request<LoginResponse>('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
+  })
+}
+
+export async function authLoginRegular(name: string, email: string, role: string): Promise<LoginResponse> {
+  return request<LoginResponse>('/auth/login-regular', {
+    method: 'POST',
+    body: JSON.stringify({ name, email, role }),
   })
 }
 
@@ -306,4 +314,20 @@ export async function updateUserProfile(payload: UpdateProfilePayload): Promise<
     method: 'POST',
     body: JSON.stringify(payload)
   })
+}
+
+export interface UserItem {
+  id: number
+  username: string
+  email: string
+  role: string
+  created_at: string | null
+}
+
+export async function adminListUsers(): Promise<UserItem[]> {
+  return request<UserItem[]>('/admin/users')
+}
+
+export async function adminDeleteUser(userId: number): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>(`/admin/users/${userId}`, { method: 'DELETE' })
 }

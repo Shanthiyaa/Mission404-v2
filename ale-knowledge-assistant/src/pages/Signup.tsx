@@ -51,7 +51,7 @@ export default function Signup() {
               <Brain size={22} className="text-white" />
             </div>
             <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Create your account</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Join Ale Docbot</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Join AL Docbot</p>
           </div>
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Full Name */}

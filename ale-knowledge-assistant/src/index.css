@@ -18,28 +18,41 @@
 
 @layer components {
   .sidebar-item {
-    @apply flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer text-white/60 text-sm transition-all duration-150 hover:bg-white/10 hover:text-white/90;
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer text-white/60 text-sm transition-all duration-200 hover:bg-white/5 hover:text-white;
   }
   .sidebar-item.active {
-    @apply bg-purple-600 text-white;
+    background: linear-gradient(135deg, #7c3aed 0%, #9333ea 100%) !important;
+    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.25);
+    @apply text-white font-medium;
   }
   .card {
-    @apply bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-4;
+    @apply bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-4 transition-all duration-300;
+  }
+  .card:hover {
+    @apply border-purple-500/20 dark:border-purple-500/25;
+    transform: translateY(-2px);
+    box-shadow: 0 12px 24px rgba(124, 58, 237, 0.05), 0 4px 8px rgba(124, 58, 237, 0.03);
   }
   .badge {
     @apply text-xs px-2 py-0.5 rounded-full font-normal;
   }
   .btn-primary {
-    @apply bg-purple-600 hover:bg-purple-700 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm;
+    background: linear-gradient(135deg, #7c3aed 0%, #9333ea 100%);
+    @apply text-white font-medium px-4 py-2 rounded-lg transition-all duration-300 text-sm shadow-md shadow-purple-500/10 hover:shadow-lg hover:shadow-purple-500/25 hover:-translate-y-0.5 active:translate-y-0;
   }
   .btn-secondary {
-    @apply bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium px-4 py-2 rounded-lg transition-colors text-sm;
+    @apply bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-medium px-4 py-2 rounded-lg transition-all duration-300 text-sm hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:border-purple-500/20 hover:-translate-y-0.5 active:translate-y-0;
   }
   .input {
-    @apply w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all;
+    @apply w-full border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all duration-200;
   }
   .stat-card {
-    @apply bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-4;
+    @apply bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-4 transition-all duration-300;
+  }
+  .stat-card:hover {
+    @apply border-purple-500/20 dark:border-purple-500/25;
+    transform: translateY(-2px);
+    box-shadow: 0 12px 24px rgba(124, 58, 237, 0.05), 0 4px 8px rgba(124, 58, 237, 0.03);
   }
 }
 
@@ -88,4 +101,84 @@
 .highlight-message {
   animation: pulse-highlight-msg 3.5s ease-in-out;
   border-radius: 8px;
+}
+
+@keyframes wave-float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes pulse-orb {
+  0% { transform: scale(1) translate(0, 0); opacity: 0.6; }
+  100% { transform: scale(1.15) translate(15px, -15px); opacity: 0.9; }
+}
+
+@keyframes card-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(124, 58, 237, 0.25), 0 0 40px rgba(124, 58, 237, 0.15), 0 4px 30px rgba(0, 0, 0, 0.55);
+    border-color: rgba(139, 92, 246, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 35px rgba(124, 58, 237, 0.5), 0 0 60px rgba(124, 58, 237, 0.3), 0 4px 30px rgba(0, 0, 0, 0.65);
+    border-color: rgba(167, 139, 250, 0.65);
+  }
+}
+
+.admin-glow-card {
+  animation: card-glow 6s ease-in-out infinite;
+}
+
+@keyframes float-bg-drift-a {
+  0%, 100% { transform: translateY(0) translateX(0) rotate(0deg); opacity: 0.45; }
+  50% { transform: translateY(-15px) translateX(8px) rotate(3deg); opacity: 0.8; }
+}
+
+@keyframes float-bg-drift-b {
+  0%, 100% { transform: translateY(0) translateX(0) rotate(0deg); opacity: 0.5; }
+  50% { transform: translateY(18px) translateX(-10px) rotate(-4deg); opacity: 0.85; }
+}
+
+@keyframes float-bg-drift-c {
+  0%, 100% { transform: translateY(0) translateX(0) rotate(0deg); opacity: 0.4; }
+  50% { transform: translateY(-12px) translateX(-12px) rotate(5deg); opacity: 0.75; }
+}
+
+.float-bg-a { animation: float-bg-drift-a 7s ease-in-out infinite; }
+.float-bg-b { animation: float-bg-drift-b 9s ease-in-out infinite; }
+.float-bg-c { animation: float-bg-drift-c 8s ease-in-out infinite; }
+
+.floating-bg-particle {
+  position: absolute;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 62px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(124, 58, 237, 0.16);
+  box-shadow: 0 4px 15px rgba(124, 58, 237, 0.08), 0 0 10px rgba(124, 58, 237, 0.04);
+  backdrop-filter: blur(4px);
+  z-index: 1;
+  pointer-events: none;
+  transition: all 0.3s ease;
+}
+
+@keyframes card-glow-light {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(124, 58, 237, 0.06), 0 10px 30px rgba(124, 58, 237, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
+    border-color: rgba(124, 58, 237, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 35px rgba(124, 58, 237, 0.12), 0 15px 40px rgba(124, 58, 237, 0.08), 0 1px 3px rgba(0, 0, 0, 0.02);
+    border-color: rgba(124, 58, 237, 0.4);
+  }
+}
+
+.admin-glow-card-light {
+  animation: card-glow-light 6s ease-in-out infinite;
 }

@@ -9,7 +9,7 @@ import type { Message } from '../types'
 const INITIAL: Message[] = [
   {
     role: 'assistant',
-    content: "Hello! I'm your Ale Docbot. Ask me anything about your uploaded user guides, release notes, SQA test cases, and KCS articles.",
+    content: "Hello! I'm your AL Docbot. Ask me anything about your uploaded user guides, release notes, SQA test cases, and KCS articles.",
   },
 ]
 
@@ -315,7 +315,8 @@ export default function Chat() {
     setActiveId,
     setSelectedDocs,
     setConversations,
-    sendChatQuery
+    sendChatQuery,
+    user
   } = useGlobalState()
 
   const [searchParams, setSearchParams] = useSearchParams()
@@ -337,6 +338,31 @@ export default function Chat() {
   const activeConv = conversations.find(c => c.id === activeId) ?? conversations[0]
   const messages = activeConv?.messages ?? INITIAL
   const loading = !!activeQueries[activeId]
+
+  const [showAllMessages, setShowAllMessages] = useState(false)
+  useEffect(() => {
+    setShowAllMessages(false)
+  }, [activeId])
+
+  let displayMessages = messages
+  let hasHiddenMessages = false
+  if (!showAllMessages && messages.length > 0) {
+    let userMsgCount = 0
+    let foundIndex = -1
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        userMsgCount++
+        if (userMsgCount === 3) {
+          foundIndex = i
+          break
+        }
+      }
+    }
+    if (foundIndex > 0) {
+      displayMessages = messages.slice(foundIndex)
+      hasHiddenMessages = true
+    }
+  }
 
   const availableDocs = documents.filter(d => d.status === 'Indexed')
 
@@ -526,7 +552,7 @@ export default function Chat() {
   return (
     <div>
       <div className="mb-4">
-        <h1 className="text-xl font-medium text-gray-900 dark:text-white">Ale Docbot</h1>
+        <h1 className="text-xl font-medium text-gray-900 dark:text-white">AL Docbot</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Ask questions about your indexed documents</p>
       </div>
 
@@ -593,6 +619,30 @@ export default function Chat() {
               </div>
             ) : (
               <div className="flex-1 overflow-y-auto space-y-1.5 max-h-40 pr-1">
+                {availableDocs.length > 1 && (
+                  <label
+                    className="flex items-center gap-2 text-xs text-purple-600 dark:text-purple-400 font-semibold cursor-pointer select-none pb-1.5 border-b border-gray-100 dark:border-gray-800/40 mb-1.5"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedDocs.length === availableDocs.length}
+                      onChange={(e) => {
+                        if (!multiDoc) {
+                          setDocSelectionError("Multi-document search is disabled in settings. You may select only one document.")
+                          return
+                        }
+                        setDocSelectionError(null)
+                        if (e.target.checked) {
+                          setSelectedDocs(availableDocs.map(d => d.name))
+                        } else {
+                          setSelectedDocs([])
+                        }
+                      }}
+                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    />
+                    <span>Select All</span>
+                  </label>
+                )}
                 {availableDocs.map(doc => {
                   const isChecked = selectedDocs.includes(doc.name)
                   return (
@@ -645,12 +695,14 @@ export default function Chat() {
               <Bot size={14} className="text-white" />
             </div>
             <div className="flex-1">
-              <div className="text-sm font-medium text-gray-900 dark:text-white">Ale Docbot</div>
+              <div className="text-sm font-medium text-gray-900 dark:text-white">AL Docbot</div>
               <div className="text-xs text-gray-400">Searching across indexed documents</div>
             </div>
-            <span className="text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-600 px-2.5 py-1 rounded-full font-mono">
-              llama3.2 · local
-            </span>
+            {user?.role === 'Admin' && (
+              <span className="text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-600 px-2.5 py-1 rounded-full font-mono">
+                llama3.2 · local
+              </span>
+            )}
           </div>
 
           {/* Messages */}
@@ -661,12 +713,25 @@ export default function Chat() {
             onMouseUp={handleScrollAreaMouseUp}
             className="flex-1 overflow-y-auto p-4 space-y-4"
           >
-            {messages.map((m, i) => (
-              <div 
-                key={i} 
-                id={m.id ? `msg-${m.id}` : `msg-idx-${i}`}
-                className={clsx('flex gap-2.5 items-start transition-all', m.role === 'user' && 'flex-row-reverse')}
-              >
+            {hasHiddenMessages && (
+              <div className="flex justify-center pb-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAllMessages(true)}
+                  className="px-3.5 py-1.5 text-xs font-semibold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-colors"
+                >
+                  Load older messages
+                </button>
+              </div>
+            )}
+            {displayMessages.map((m, i) => {
+              const originalIndex = messages.indexOf(m)
+              return (
+                <div 
+                  key={i} 
+                  id={m.id ? `msg-${m.id}` : `msg-idx-${originalIndex}`}
+                  className={clsx('flex gap-2.5 items-start transition-all', m.role === 'user' && 'flex-row-reverse')}
+                >
                 <div className={clsx(
                   'w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0 mt-0.5',
                   m.role === 'assistant'
@@ -715,7 +780,8 @@ export default function Chat() {
                   )}
                 </div>
               </div>
-            ))}
+              )
+            })}
 
             {/* Typing indicator */}
             {loading && (

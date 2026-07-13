@@ -6,6 +6,7 @@ import {
   getUploadStatus,
   queryDocuments,
   authLogin,
+  authLoginRegular,
   authSignup,
   getProfile,
   getConversations,
@@ -34,6 +35,7 @@ interface GlobalStateContextType {
   user: AuthUser | null
   authLoading: boolean
   login: (email: string, password: string) => Promise<void>
+  loginRegular: (name: string, email: string, role: string) => Promise<void>
   signup: (name: string, email: string, department: string, password: string) => Promise<void>
   logout: () => void
 
@@ -92,7 +94,7 @@ function makeConversationId(): string {
 const INITIAL: Message[] = [
   {
     role: 'assistant',
-    content: "Hello! I'm your Ale Docbot. Ask me anything about your uploaded user guides, release notes, SQA test cases, and KCS articles.",
+    content: "Hello! I'm your AL Docbot. Ask me anything about your uploaded user guides, release notes, SQA test cases, and KCS articles.",
   },
 ]
 
@@ -154,6 +156,13 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
   // --- Auth Handlers ---
   const login = async (email: string, password: string) => {
     const res = await authLogin(email, password)
+    localStorage.setItem(TOKEN_KEY, res.access_token)
+    setToken(res.access_token)
+    setUser(res.user)
+  }
+
+  const loginRegular = async (name: string, email: string, role: string) => {
+    const res = await authLoginRegular(name, email, role)
     localStorage.setItem(TOKEN_KEY, res.access_token)
     setToken(res.access_token)
     setUser(res.user)
@@ -528,6 +537,8 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
             ? 'No documents have been indexed yet. Please upload a PDF first.'
             : e.message?.includes('LLM unavailable')
             ? 'The Ollama LLM is not reachable. Make sure Ollama is running: `ollama serve`'
+            : e.message?.includes('maximum limit')
+            ? e.message
             : 'Something went wrong: ' + e.message,
           error: true,
         },
@@ -544,6 +555,7 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
         user,
         authLoading,
         login,
+        loginRegular,
         signup,
         logout,
 
