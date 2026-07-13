@@ -1,0 +1,193 @@
+Project Review Summary
+======================
+
+Project name: Mission404-v2
+
+Overview
+--------
+This workspace contains two related projects:
+1. ai-document-qa-system-2026
+   - A Python-based document Q&A system using RAG, embeddings, FAISS, and an API backend.
+   - Designed to ingest technical documents, index them, and answer questions with source citations.
+
+2. ale-knowledge-assistant
+   - A React + TypeScript frontend for a knowledge assistant experience.
+   - Provides login/signup, dashboard, chat, document upload, knowledge base browsing, settings, and notifications.
+
+Main folders and their purpose
+------------------------------
+
+1) ai-document-qa-system-2026
+   - Root folder containing the backend pipeline and API.
+   - Main purpose: upload documents, extract content, chunk it, build a vector index, and answer user questions.
+
+   Subfolders:
+   - member1/
+     - Contains the document extraction and chunking logic.
+     - Responsible for parsing PDFs, DOCX, PPTX, XLSX, TXT, and ZIP files.
+   - member2/
+     - Contains embedding generation, FAISS vector store, and retrieval logic.
+     - Converts text into embeddings and searches for relevant document chunks.
+   - member3/
+     - Contains a Streamlit-based older UI prototype for document Q&A.
+   - data/
+     - Stores chunk JSON files and FAISS metadata/index files used by the app.
+   - uploaded_docs/
+     - Stores uploaded documents used by local testing and processing.
+   - tests/
+     - Contains test files for app query, query session, and retriever behavior.
+   - scripts/
+     - Contains helper scripts such as Ollama polling utilities.
+   - company_docs/
+     - Intended storage for seeded company documents.
+
+2) ale-knowledge-assistant
+   - Frontend application for the knowledge assistant.
+   - Main purpose: provide a polished UI for users to chat with the backend, upload documents, and manage their knowledge base.
+
+   Subfolders:
+   - src/
+     - App.tsx: Main app routing and authentication-based page switching.
+     - api/client.ts: Central API wrapper for communicating with the backend.
+     - components/Layout.tsx: Shared application layout and navigation sidebar.
+     - context/GlobalState.tsx: Centralized front-end state, chat sessions, upload progress, notifications, and user preferences.
+     - hooks/useDocuments.ts: Shared hook for loading and managing documents.
+     - pages/
+       - Chat.tsx: Conversation-based chat UI with citations and document selection.
+       - Dashboard.tsx: Summary cards and charts for document and query activity.
+       - DocPreview.tsx: Document preview page for viewing source content.
+       - KnowledgeBase.tsx: Searchable and filterable document management page.
+       - Login.tsx: Login page.
+       - Notification.tsx: Notification center.
+       - Settings.tsx: User profile and preferences management.
+       - Signup.tsx: Signup page.
+       - Upload.tsx: Document upload experience.
+     - types/index.ts: Shared TypeScript interfaces.
+
+Key files and their functions
+-----------------------------
+
+A. Backend project: ai-document-qa-system-2026
+
+1) api.py
+   - Main FastAPI backend entry point.
+   - Handles authentication, document upload, query processing, document listing, conversations, notifications, and stats.
+   - Connects the frontend with the AI pipeline and database.
+
+2) config.py
+   - Central configuration file.
+   - Stores upload paths, chunk sizes, embedding model name, FAISS settings, Ollama settings, and prompt templates.
+
+3) db.py
+   - Manages SQLAlchemy models and database initialization.
+   - Defines tables for users, documents, conversations, messages, activities, and notifications.
+
+4) seed_knowledge_base.py
+   - Preloads company documents into the knowledge base.
+   - Scans a folder of documents, runs the extraction pipeline, and indexes them into FAISS.
+
+5) run_local_test.py
+   - Local testing script for the extraction and indexing pipeline.
+   - Useful for validating that document processing works without the full API.
+
+6) member1/extractor.py
+   - Core document processing module.
+   - Extracts text from PDF, DOCX, PPTX, XLSX, TXT, and ZIP files.
+   - Cleans text, detects document type, chunks content, and saves chunked output for downstream use.
+
+7) member2/embeddings.py
+   - Handles embedding generation using sentence-transformers.
+   - Converts chunks into semantic vectors used for retrieval.
+
+8) member2/retriever.py
+   - Performs similarity search against the FAISS index.
+   - Fetches the most related chunks for a query.
+
+9) member2/vector_store.py
+   - Builds, updates, and removes FAISS indexes.
+   - Stores chunk metadata and manages vector operations.
+
+10) member3/app.py
+    - Streamlit-based UI prototype.
+    - Older alternative interface for uploading PDFs and chatting with the model.
+
+B. Frontend project: ale-knowledge-assistant
+
+1) package.json
+   - Lists the app dependencies and scripts like dev, build, and preview.
+
+2) vite.config.ts
+   - Vite configuration for the frontend.
+
+3) src/App.tsx
+   - Main router for login/signup and authenticated app pages.
+
+4) src/context/GlobalState.tsx
+   - Main application state manager.
+   - Contains logic for auth, conversations, notifications, uploads, document state, and chat sending.
+
+5) src/api/client.ts
+   - Backend API client.
+   - Wraps requests for auth, upload, chat, documents, notifications, and profile updates.
+
+6) src/components/Layout.tsx
+   - Shared page layout with sidebar navigation, notifications, and search.
+
+7) src/pages/Chat.tsx
+   - Chat experience with conversation history, source citations, and markdown rendering.
+
+8) src/pages/Upload.tsx
+   - Upload page supporting multiple document types and categories.
+
+9) src/pages/KnowledgeBase.tsx
+   - Document inventory view with search, filter, and delete actions.
+
+10) src/pages/Dashboard.tsx
+    - Analytics and visualization page for document counts, query counts, categories, and processing status.
+
+11) src/pages/Settings.tsx
+    - Settings page for theme, profile, AI model selection, and search preferences.
+
+12) src/pages/Notification.tsx
+    - Notification UI for user alerts and actions.
+
+13) src/pages/Login.tsx and Signup.tsx
+    - Authentication pages.
+
+How the system works end-to-end
+-------------------------------
+1. User uploads a document through the frontend or seeds documents through the backend script.
+2. The backend extracts text from the file.
+3. The text is chunked into smaller segments.
+4. Chunks are embedded into vectors.
+5. Those vectors are stored in a FAISS index.
+6. When a user asks a question, the retriever finds semantically similar chunks.
+7. The question and relevant chunks are sent to the LLM (via Ollama) to generate an answer.
+8. The frontend displays the answer and source citations.
+
+Important technical notes
+-------------------------
+- The project uses a RAG-style architecture.
+- The backend is built with FastAPI and Python.
+- The frontend is built with React, TypeScript, and Vite.
+- The vector store uses FAISS for similarity search.
+- The LLM integration uses Ollama and a local model configuration.
+- The database uses SQLAlchemy with PostgreSQL support.
+
+Suggested review focus areas
+----------------------------
+- Backend API routing and authentication flow.
+- Document ingestion pipeline reliability.
+- FAISS index update and retrieval accuracy.
+- Frontend state management and API integration.
+- Chat experience, citation handling, and notifications.
+- Compatibility with local environment dependencies such as Ollama and PostgreSQL.
+
+Conclusion
+----------
+This is a full-stack AI documentation assistant project with:
+- a Python backend that handles ingestion, indexing, retrieval, and API services;
+- a React frontend that provides a polished user experience;
+- a clear separation between extraction, vector search, API layer, and UI layer.
+
+The project is suitable for review as a document-QA platform with enterprise-style features and a modular architecture.
