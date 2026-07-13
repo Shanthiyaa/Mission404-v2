@@ -43,7 +43,7 @@ EMBEDDING_BATCH_SIZE = 32         # batch size for faster embedding generation
 # ── FAISS retrieval — FIX BUG 4: TOP_K was 6. With old tiny chunks that was
 # only ~360 words to the LLM. After the chunk size fix above, TOP_K=12 sends
 # ~2400 words — enough for multi-step technical procedures.
-TOP_K_RESULTS  = 12               # retrieve 12 chunks for full-procedure coverage
+TOP_K_RESULTS  = 6                # retrieve 6 chunks for full-procedure coverage
 MIN_SIMILARITY = 0.20             # keep threshold; don't lower further
 
 # ── Duplicate detection ───────────────────────────────────────────────────────

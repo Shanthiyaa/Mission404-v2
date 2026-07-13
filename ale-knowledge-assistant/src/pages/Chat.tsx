@@ -21,75 +21,85 @@ interface ConversationEntry {
   messages: Message[]
 }
 
-interface GroupedFileSourceCardProps {
-  filename: string
-  citations: any[]
+interface CitationCardProps {
+  index: number
+  cite: any
 }
-function GroupedFileSourceCard({ filename, citations }: GroupedFileSourceCardProps) {
+function CitationCard({ index, cite }: CitationCardProps) {
+  const filename = cite.source_file || 'Unknown Document'
+  const ext = filename.split('.').pop()?.toLowerCase() || ''
+  
+  let linkUrl = ''
+  const textParam = cite.text ? `&text=${encodeURIComponent(cite.text)}` : ''
+  if (ext === 'pdf') {
+    linkUrl = `/preview?file=${encodeURIComponent(filename)}&page=${cite.page || 1}`
+  } else if (ext === 'pptx') {
+    linkUrl = `/preview?file=${encodeURIComponent(filename)}&anchor=slide-${cite.slide || cite.page}${textParam}`
+  } else if (ext === 'docx') {
+    const slugify = (text: string) => {
+      return "heading-" + text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+    }
+    const anchorVal = cite.section ? slugify(cite.section) : 'docx'
+    linkUrl = `/preview?file=${encodeURIComponent(filename)}&anchor=${anchorVal}${textParam}`
+  } else if (ext === 'xlsx') {
+    linkUrl = `/preview?file=${encodeURIComponent(filename)}&anchor=sheet-${cite.worksheet || ''}${textParam}`
+  } else if (ext === 'txt') {
+    linkUrl = `/preview?file=${encodeURIComponent(filename)}&anchor=txt${textParam}`
+  } else {
+    linkUrl = `/api/documents/${encodeURIComponent(filename)}/view`
+  }
+
+  const pageVal = ext === 'pptx' ? (cite.slide || cite.page) : ext === 'xlsx' ? (cite.worksheet || 'Sheet1') : cite.page
+
   return (
-    <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-3">
-      {/* Header */}
-      <div className="flex items-center gap-1.5 mb-2 pb-1.5 border-b border-gray-100 dark:border-gray-700/60">
-        <FileText size={14} className="text-purple-600 flex-shrink-0" />
-        <span className="text-sm font-semibold text-gray-900 dark:text-white truncate max-w-[190px]" title={filename}>
-          {filename}
-        </span>
-        <span className="text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 rounded ml-auto">
-          {citations.length} {citations.length === 1 ? 'finding' : 'findings'}
-        </span>
+    <div className="bg-white dark:bg-gray-800 border border-gray-105 dark:border-gray-700 rounded-lg p-3 text-xs flex flex-col justify-between">
+      <div>
+        {/* Source Title */}
+        <div className="text-[10px] uppercase font-bold text-purple-600 dark:text-purple-400 mb-1">
+          Source {index}
+        </div>
+        
+        {/* Document Name */}
+        <div className="flex items-start gap-1.5 mb-1.5">
+          <FileText size={13} className="text-gray-400 dark:text-gray-500 flex-shrink-0 mt-0.5" />
+          <span className="font-semibold text-gray-950 dark:text-white truncate" title={filename}>
+            {filename}
+          </span>
+        </div>
+
+        {/* Metadata Details */}
+        <div className="space-y-1 text-gray-600 dark:text-gray-300 font-medium pl-1 mb-2">
+          {cite.section ? (
+            <div>
+              <span className="text-gray-400 dark:text-gray-500 font-normal">Section: </span>
+              {cite.section}
+            </div>
+          ) : (
+            <div>
+              <span className="text-gray-400 dark:text-gray-500 font-normal">Section: </span>
+              General
+            </div>
+          )}
+          <div>
+            <span className="text-gray-400 dark:text-gray-500 font-normal">
+              {ext === 'pptx' ? 'Slide: ' : ext === 'xlsx' ? 'Worksheet: ' : 'Page: '}
+            </span>
+            {pageVal}
+          </div>
+        </div>
       </div>
 
-      {/* Findings list */}
-      <div className="space-y-3">
-        {citations.map((cite, ci) => {
-          // FIX: guard against a missing/undefined source_file so a single
-          // malformed citation can't throw and blank out the whole answer.
-          const ext = cite.source_file ? cite.source_file.split('.').pop()?.toLowerCase() : ''
-          let linkUrl = ''
-          const textParam = cite.text ? `&text=${encodeURIComponent(cite.text)}` : ''
-          if (ext === 'pdf') {
-            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&page=${cite.page || 1}`
-          } else if (ext === 'pptx') {
-            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&anchor=slide-${cite.slide || cite.page}${textParam}`
-          } else if (ext === 'docx') {
-            const slugify = (text: string) => {
-              return "heading-" + text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
-            }
-            const anchorVal = cite.section ? slugify(cite.section) : 'docx'
-            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&anchor=${anchorVal}${textParam}`
-          } else if (ext === 'xlsx') {
-            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&anchor=sheet-${cite.worksheet || ''}${textParam}`
-          } else if (ext === 'txt') {
-            linkUrl = `/preview?file=${encodeURIComponent(cite.source_file)}&anchor=txt${textParam}`
-          } else {
-            linkUrl = `/api/documents/${encodeURIComponent(cite.source_file)}/view`
-          }
-
-          return (
-            <div key={ci} className="text-xs border-b border-gray-50 dark:border-gray-855 last:border-b-0 pb-2 last:pb-0">
-              <div className="flex items-center justify-between text-gray-400 dark:text-gray-500 font-medium mb-1">
-                <span>
-                  {ext === 'pptx' ? `Slide ${cite.slide || cite.page}` : ext === 'xlsx' ? `Worksheet: ${cite.worksheet || 'Sheet1'}` : `Page ${cite.page}`} {cite.section ? `· Section: ${cite.section}` : ''}
-                </span>
-                <a
-                  href={linkUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-0.5 text-purple-500 hover:text-purple-700 transition-colors font-semibold"
-                  title={`Open ${cite.source_file}`}
-                >
-                  Go to source <ExternalLink size={10} />
-                </a>
-              </div>
-              <div className="border-l-2 border-purple-200 dark:border-purple-800 pl-2 bg-gray-50/50 dark:bg-gray-900/20 p-2 rounded-r">
-                <p className="text-sm text-black dark:text-white whitespace-pre-wrap leading-relaxed">
-                  {cite.text}
-                </p>
-              </div>
-
-            </div>
-          )
-        })}
+      {/* Link */}
+      <div className="pt-1.5 border-t border-gray-50 dark:border-gray-700/60 mt-auto flex items-center justify-between">
+        <a
+          href={linkUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-0.5 text-purple-500 hover:text-purple-700 transition-colors font-semibold"
+          title={`Open ${filename}`}
+        >
+          Go to source <ExternalLink size={10} />
+        </a>
       </div>
     </div>
   )
@@ -687,32 +697,22 @@ export default function Chat() {
                   )}
 
                   {/* Citations */}
-                  {showCitations && m.citations && m.citations.length > 0 && (() => {
-                    // Group citations by source_file
-                    const groups: { [filename: string]: any[] } = {}
-                    m.citations.forEach(c => {
-                      if (!groups[c.source_file]) {
-                        groups[c.source_file] = []
-                      }
-                      groups[c.source_file].push(c)
-                    })
-                    const groupedList = Object.entries(groups)
-
-                    return (
-                      <div className="mt-4 space-y-2.5">
-                        <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                          Source References
-                        </div>
-                        {groupedList.map(([filename, list]) => (
-                          <GroupedFileSourceCard
-                            key={filename}
-                            filename={filename}
-                            citations={list}
+                  {showCitations && m.citations && m.citations.length > 0 && (
+                    <div className="mt-4 space-y-2.5">
+                      <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Source References
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {m.citations.map((cite, index) => (
+                          <CitationCard
+                            key={index}
+                            index={index + 1}
+                            cite={cite}
                           />
                         ))}
                       </div>
-                    )
-                  })()}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

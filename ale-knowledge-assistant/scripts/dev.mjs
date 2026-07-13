@@ -20,15 +20,16 @@ function commandFor(candidates) {
   return candidates.find((candidate) => existsSync(candidate))
 }
 
-function isPortAvailable(portToCheck) {
-  return new Promise((resolvePort) => {
-    const server = createServer()
-    server.once('error', () => resolvePort(false))
-    server.once('listening', () => {
-      server.close(() => resolvePort(true))
-    })
-    server.listen(portToCheck, host)
-  })
+async function isApiHealthy(target) {
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 1000)
+    const response = await fetch(`${target}/api/health`, { signal: controller.signal })
+    clearTimeout(timeout)
+    return response.ok
+  } catch {
+    return false
+  }
 }
 
 function sleep(ms) {
@@ -54,7 +55,11 @@ async function waitForApi(timeoutMs = 120000) {
 }
 
 function spawnProcess(label, command, args, options) {
-  const child = spawn(command, args, {
+  const cmd = (process.platform === 'win32' && command.includes(' ') && !command.startsWith('"'))
+    ? `"${command}"`
+    : command
+
+  const child = spawn(cmd, args, {
     ...options,
     shell: process.platform === 'win32',
     stdio: 'inherit',
@@ -86,12 +91,16 @@ function shutdown(code = 0) {
 }
 
 async function main() {
-  const portAvailable = await isPortAvailable(port)
+  const apiHealthy = await isApiHealthy(apiTarget)
 
-  if (portAvailable) {
+  if (!apiHealthy) {
     const venvPython = commandFor([
       resolve(backendDir, '.venv', 'Scripts', 'python.exe'),
       resolve(backendDir, '.venv', 'bin', 'python'),
+      resolve(backendDir, 'venv', 'Scripts', 'python.exe'),
+      resolve(backendDir, 'venv', 'bin', 'python'),
+      resolve(repoDir, '.venv', 'Scripts', 'python.exe'),
+      resolve(repoDir, '.venv', 'bin', 'python'),
     ])
     const pythonCommand = venvPython || (process.platform === 'win32' ? 'python' : 'python3')
 

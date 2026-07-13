@@ -8,8 +8,19 @@ from config import API_HOST, API_PORT
 
 
 def _is_port_available(host: str, port: int) -> bool:
+    # First check if there is an active listener on this port
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.2)
+        try:
+            sock.connect((host, port))
+            return False
+        except OSError:
+            pass
+
+    # Then check if we can bind (allowing address reuse to handle TimeWait)
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.bind((host, port))
         except OSError:
             return False
