@@ -1,13 +1,35 @@
-import os
+import logging
 from typing import List
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
 from config import EMBEDDING_MODEL, EMBEDDING_DEVICE, EMBEDDING_BATCH_SIZE
 
+log = logging.getLogger(__name__)
+
+def _resolve_device(device_setting: str) -> str:
+    """Resolve the execution device dynamically.
+    
+    If 'cuda' is selected but not available via PyTorch, falls back to 'cpu'.
+    """
+    if device_setting == "cuda":
+        try:
+            import torch
+            if torch.cuda.is_available():
+                log.info("CUDA is available. Using GPU for sentence embeddings.")
+                return "cuda"
+            else:
+                log.warning("CUDA was requested/configured for embeddings, but is not available. Falling back to 'cpu'.")
+                return "cpu"
+        except ImportError:
+            log.warning("PyTorch import failed. Falling back to 'cpu' for embeddings.")
+            return "cpu"
+    return device_setting
+
+ACTUAL_DEVICE = _resolve_device(EMBEDDING_DEVICE)
 
 # ✅ LOAD MODEL ONLY ONCE (GLOBAL SINGLETON)
-_model = SentenceTransformer(EMBEDDING_MODEL, device=EMBEDDING_DEVICE)
+_model = SentenceTransformer(EMBEDDING_MODEL, device=ACTUAL_DEVICE)
 
 
 class SentenceTransformerEmbeddings:

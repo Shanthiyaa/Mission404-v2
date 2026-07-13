@@ -37,7 +37,7 @@ CHUNK_CONFIG = {
 
 # ── Embeddings ────────────────────────────────────────────────────────────────
 EMBEDDING_MODEL  = "sentence-transformers/all-MiniLM-L6-v2"
-EMBEDDING_DEVICE = "cpu"          # change to "cuda" if GPU available
+EMBEDDING_DEVICE = os.getenv("EMBEDDING_DEVICE", "cuda")  # "cuda" or "cpu", falls back to "cpu" if CUDA is unavailable
 EMBEDDING_BATCH_SIZE = 32         # batch size for faster embedding generation
 
 # ── FAISS retrieval — FIX BUG 4: TOP_K was 6. With old tiny chunks that was
