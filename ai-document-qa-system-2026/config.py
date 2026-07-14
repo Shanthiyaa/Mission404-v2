@@ -51,7 +51,7 @@ ENABLE_DUPLICATE_DETECTION = True  # detect and reject duplicate uploads
 
 # ── Ollama / LLM ──────────────────────────────────────────────────────────────
 OLLAMA_MODEL       = "llama3.2"
-OLLAMA_BASE_URL    = "http://localhost:11434"
+OLLAMA_BASE_URL    = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 LLM_TEMPERATURE    = 0.3
 LLM_CONTEXT_WINDOW = 4096
 
