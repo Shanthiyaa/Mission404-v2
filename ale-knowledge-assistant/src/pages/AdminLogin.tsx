@@ -17,6 +17,14 @@ const BG_ICONS = [
   { name: 'PPT', top: '70%', right: '10%', animClass: 'float-bg-a', delay: '2.5s' }
 ]
 
+const LIGHT_PARTICLES = [
+  { top: '15%', left: '15%', size: '8px', delay: '0s', duration: '8s' },
+  { top: '55%', left: '25%', size: '12px', delay: '2s', duration: '12s' },
+  { top: '35%', right: '22%', size: '10px', delay: '1s', duration: '10s' },
+  { top: '80%', right: '30%', size: '8px', delay: '3s', duration: '7s' },
+  { top: '10%', right: '45%', size: '14px', delay: '4s', duration: '15s' },
+]
+
 export default function AdminLogin({ onToggleDark }: AdminLoginProps) {
   const { login } = useGlobalState()
   const [email, setEmail] = useState('')
@@ -64,6 +72,9 @@ export default function AdminLogin({ onToggleDark }: AdminLoginProps) {
         background: 'linear-gradient(135deg, #f5f3ff 0%, #ffffff 50%, #faf5ff 100%)',
       }}
     >
+      {/* Dots grid overlay */}
+      <div className="absolute inset-0 pointer-events-none bg-dot-pattern opacity-70" />
+
       {/* Soft glowing purple background orbs */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div style={{
@@ -80,6 +91,24 @@ export default function AdminLogin({ onToggleDark }: AdminLoginProps) {
           filter: 'blur(70px)',
           animation: 'pulse-orb 20s ease-in-out infinite alternate-reverse',
         }} />
+
+        {/* Minimal floating particles / soft glowing lights */}
+        {LIGHT_PARTICLES.map((p, idx) => (
+          <div
+            key={idx}
+            className="absolute rounded-full bg-purple-400/20 blur-[1px] animate-pulse"
+            style={{
+              top: p.top,
+              left: p.left,
+              right: p.right,
+              width: p.size,
+              height: p.size,
+              animationDelay: p.delay,
+              animationDuration: p.duration,
+              boxShadow: '0 0 10px rgba(167, 139, 250, 0.4)',
+            }}
+          />
+        ))}
       </div>
 
       {/* Floating background document particles */}
@@ -87,18 +116,21 @@ export default function AdminLogin({ onToggleDark }: AdminLoginProps) {
         {BG_ICONS.map(({ name, top, left, right, animClass, delay }) => (
           <div
             key={name}
-            className={`hidden md:flex floating-bg-particle ${animClass}`}
+            className={`hidden md:block absolute ${animClass}`}
             style={{
               top,
               left,
               right,
               animationDelay: delay,
+              zIndex: 1,
             }}
           >
-            <FileText size={16} className="text-purple-600/80" />
-            <span style={{ fontSize: '9px', fontWeight: 600, color: 'rgba(124, 58, 237, 0.95)', marginTop: '3px' }}>
-              {name}
-            </span>
+            <div className="floating-bg-particle flex flex-col items-center justify-center pointer-events-auto">
+              <FileText size={18} className="text-purple-600 animate-pulse" />
+              <span className="text-[10px] font-bold text-purple-700 mt-1">
+                {name}
+              </span>
+            </div>
           </div>
         ))}
       </div>
@@ -144,16 +176,15 @@ export default function AdminLogin({ onToggleDark }: AdminLoginProps) {
               <div style={{
                 width: '56px',
                 height: '56px',
-                borderRadius: '16px',
-                background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.08) 0%, rgba(124, 58, 237, 0.02) 100%)',
-                border: '1px solid rgba(124, 58, 237, 0.2)',
+                borderRadius: '50%',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 0 15px rgba(124, 58, 237, 0.08)',
+                boxShadow: '0 0 20px rgba(124, 58, 237, 0.15)',
                 margin: '0 auto 16px auto',
+                overflow: 'hidden',
               }}>
-                <img src={logo} alt="AL Docbot Logo" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
+                <img src={logo} alt="AL Docbot Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scale(1.4)' }} />
               </div>
               <h2 className="text-2xl font-bold text-gray-900 tracking-tight">AL Docbot</h2>
               <p className="text-xs text-gray-400 mt-1 uppercase tracking-wider">Alcatel Lucent</p>

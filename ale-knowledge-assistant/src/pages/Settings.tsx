@@ -2,6 +2,7 @@ import { useState } from 'react'
 import clsx from 'clsx'
 import { useGlobalState } from '../context/GlobalState'
 import { updateUserProfile } from '../api/client'
+import { User } from 'lucide-react'
 
 interface SettingsProps {
   dark: boolean
@@ -162,7 +163,7 @@ export default function Settings({ dark, onToggleDark, user }: SettingsProps) {
                       {formData.profile_picture ? (
                         <img src={formData.profile_picture} alt="Profile" className="w-full h-full object-cover" />
                       ) : (
-                        user ? user.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) : '?'
+                        <User size={18} className="text-purple-100" />
                       )}
                     </div>
                     <input
@@ -274,7 +275,7 @@ export default function Settings({ dark, onToggleDark, user }: SettingsProps) {
                     {user?.profile_picture ? (
                       <img src={user.profile_picture} alt="Profile" className="w-full h-full object-cover" />
                     ) : (
-                      user ? user.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) : '?'
+                      <User size={22} className="text-purple-100" />
                     )}
                   </div>
                   <div>

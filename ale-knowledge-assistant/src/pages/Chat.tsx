@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Bot, Send, Plus, FileText, AlertCircle, ExternalLink, Filter, ArrowDown } from 'lucide-react'
+import { Bot, Send, Plus, FileText, AlertCircle, ExternalLink, Filter, ArrowDown, Trash2, User, Printer } from 'lucide-react'
 import clsx from 'clsx'
 import { useGlobalState } from '../context/GlobalState'
 import type { Message } from '../types'
@@ -312,6 +312,7 @@ export default function Chat() {
     multiDoc,
     showCitations,
     newConversation,
+    deleteConv,
     setActiveId,
     setSelectedDocs,
     setConversations,
@@ -559,7 +560,7 @@ export default function Chat() {
       <div className="flex gap-3" style={{ height: 'calc(100vh - 180px)' }}>
 
         {/* Conversation sidebar */}
-        <div className="w-64 flex-shrink-0 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl overflow-hidden flex flex-col">
+        <div className="w-64 flex-shrink-0 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl overflow-hidden flex flex-col no-print">
           <div className="p-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
             <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Conversations</span>
             <button onClick={newConversation} className="text-purple-600 hover:text-purple-700" title="New conversation">
@@ -572,27 +573,42 @@ export default function Chat() {
                 key={c.id}
                 onClick={() => setActiveId(c.id)}
                 className={clsx(
-                  'p-2 rounded-lg cursor-pointer mb-1',
+                  'group p-2 rounded-lg cursor-pointer mb-1 flex items-center justify-between gap-2 transition-colors',
                   activeId === c.id ? 'bg-purple-50 dark:bg-purple-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-800'
                 )}
               >
-                <div className={clsx(
-                  'text-xs font-medium truncate',
-                  activeId === c.id ? 'text-purple-600' : 'text-gray-800 dark:text-gray-200'
-                )}>
-                  {c.title}
+                <div className="flex-1 min-w-0">
+                  <div className={clsx(
+                    'text-xs font-medium truncate',
+                    activeId === c.id ? 'text-purple-600' : 'text-gray-800 dark:text-gray-200'
+                  )}>
+                    {c.title}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-0.5">
+                    {/* FIX: count actual user questions instead of doing
+                        `messages.length - 1` (assumes a local greeting message
+                        that isn't present on conversations loaded from the
+                        backend, producing 0 or negative counts like "-1
+                        messages"). */}
+                    {(() => {
+                      const qCount = c.messages.filter(m => m.role === 'user').length
+                      return `${qCount} message${qCount !== 1 ? 's' : ''}`
+                    })()}
+                  </div>
                 </div>
-                <div className="text-xs text-gray-400 mt-0.5">
-                  {/* FIX: count actual user questions instead of doing
-                      `messages.length - 1` (assumes a local greeting message
-                      that isn't present on conversations loaded from the
-                      backend, producing 0 or negative counts like "-1
-                      messages"). */}
-                  {(() => {
-                    const qCount = c.messages.filter(m => m.role === 'user').length
-                    return `${qCount} message${qCount !== 1 ? 's' : ''}`
-                  })()}
-                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const confirmDelete = window.confirm("Are you sure you want to delete this conversation?");
+                    if (confirmDelete) {
+                      deleteConv(c.id);
+                    }
+                  }}
+                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-gray-400 hover:text-red-500 p-1.5 rounded transition-opacity"
+                  title="Delete conversation"
+                >
+                  <Trash2 size={12} />
+                </button>
               </div>
             ))}
           </div>
@@ -698,8 +714,15 @@ export default function Chat() {
               <div className="text-sm font-medium text-gray-900 dark:text-white">AL Docbot</div>
               <div className="text-xs text-gray-400">Searching across indexed documents</div>
             </div>
+            <button
+              onClick={() => window.print()}
+              className="w-8 h-8 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-purple-600 transition-colors no-print"
+              title="Print Chat / Save as PDF"
+            >
+              <Printer size={15} />
+            </button>
             {user?.role === 'Admin' && (
-              <span className="text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-600 px-2.5 py-1 rounded-full font-mono">
+              <span className="text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-600 px-2.5 py-1 rounded-full font-mono no-print">
                 llama3.2 · local
               </span>
             )}
@@ -733,12 +756,18 @@ export default function Chat() {
                   className={clsx('flex gap-2.5 items-start transition-all', m.role === 'user' && 'flex-row-reverse')}
                 >
                 <div className={clsx(
-                  'w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0 mt-0.5',
+                  'w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0 mt-0.5 overflow-hidden',
                   m.role === 'assistant'
                     ? 'bg-purple-600 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                    : 'bg-purple-600 text-white'
                 )}>
-                  {m.role === 'assistant' ? <Bot size={13} /> : 'U'}
+                  {m.role === 'assistant' ? (
+                    <Bot size={13} />
+                  ) : user?.profile_picture ? (
+                    <img src={user.profile_picture} alt="User" className="w-full h-full object-cover" />
+                  ) : (
+                    <User size={14} className="text-purple-100" />
+                  )}
                 </div>
 
                 <div className={m.role === 'assistant' ? 'flex-1 max-w-[85%]' : 'max-w-[75%]'}>
@@ -804,7 +833,7 @@ export default function Chat() {
           {showScrollBottom && (
             <button
               onClick={scrollToBottomSmooth}
-              className="absolute bottom-20 right-6 w-9 h-9 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 shadow-md hover:shadow-lg transition-all z-20 cursor-pointer"
+              className="absolute bottom-20 right-6 w-9 h-9 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 shadow-md hover:shadow-lg transition-all z-20 cursor-pointer no-print"
               title="Scroll to bottom"
             >
               <ArrowDown size={16} />
@@ -843,7 +872,7 @@ export default function Chat() {
           )}
 
           {/* Input area */}
-          <div className="p-3 border-t border-gray-100 dark:border-gray-800">
+          <div className="p-3 border-t border-gray-100 dark:border-gray-800 no-print">
             <div className="flex gap-2 items-end">
               <textarea
                 ref={textareaRef}

@@ -2,10 +2,11 @@ import { ReactNode, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, MessageSquare, Upload, BookOpen,
-  Settings, LogOut, Brain, Bell, Moon, Sun, Search, Shield
+  Settings, LogOut, Brain, Bell, Moon, Sun, Search, Shield, User
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useGlobalState } from '../context/GlobalState'
+import logo from '../logo.png'
 
 const NAV: { to: string; label: string; icon: any; badge?: string }[] = [
   { to: '/upload', label: 'Upload Document', icon: Upload },
@@ -44,14 +45,13 @@ export default function Layout({ children, onLogout, dark, onToggleDark, user }:
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-950 overflow-hidden">
-      <aside className="w-56 flex-shrink-0 flex flex-col" style={{ background: '#1F1B2E' }}>
+      <aside className="w-56 flex-shrink-0 flex flex-col no-print" style={{ background: '#1F1B2E' }}>
         <div className="p-4 border-b border-white/10 flex items-center gap-3">
-          <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
-            <Brain size={16} className="text-white" />
+          <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden">
+            <img src={logo} alt="AL Docbot Logo" className="w-full h-full object-cover scale-[1.4]" />
           </div>
           <div>
             <div className="text-white text-sm font-medium leading-tight">AL Docbot</div>
-            <div className="text-white/40 text-xs">Enterprise AI</div>
           </div>
         </div>
 
@@ -105,7 +105,7 @@ export default function Layout({ children, onLogout, dark, onToggleDark, user }:
               {user?.profile_picture ? (
                 <img src={user.profile_picture} alt="Profile" className="w-full h-full object-cover" />
               ) : (
-                initials
+                <User size={16} className="text-purple-100" />
               )}
             </div>
             <div className="flex-1 min-w-0">
@@ -117,7 +117,7 @@ export default function Layout({ children, onLogout, dark, onToggleDark, user }:
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 px-5 py-3 flex items-center gap-3 flex-shrink-0">
+        <header className="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 px-5 py-3 flex items-center gap-3 flex-shrink-0 no-print">
           <div className="flex-1 flex items-center gap-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 max-w-xs">
             <Search size={14} className="text-gray-400 flex-shrink-0" />
             <input
@@ -153,7 +153,7 @@ export default function Layout({ children, onLogout, dark, onToggleDark, user }:
               {user?.profile_picture ? (
                 <img src={user.profile_picture} alt="Profile" className="w-full h-full object-cover" />
               ) : (
-                initials
+                <User size={16} className="text-purple-100" />
               )}
             </div>
           </div>

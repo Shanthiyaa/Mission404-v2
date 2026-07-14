@@ -108,13 +108,15 @@ export default function Login() {
         {/* Top: Logo */}
         <div className="relative z-10 flex items-center gap-3">
           <div style={{
-            width: '40px', height: '40px', borderRadius: '10px',
-            background: 'rgba(255,255,255,0.15)',
-            backdropFilter: 'blur(8px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            border: '1px solid rgba(255,255,255,0.2)',
+            width: '40px',
+            height: '40px',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
           }}>
-            <img src={logo} alt="AL Docbot Logo" style={{ width: '24px', height: '24px', objectFit: 'contain' }} />
+            <img src={logo} alt="AL Docbot Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scale(1.4)' }} />
           </div>
           <div>
             <div style={{ color: 'rgba(255,255,255,0.95)', fontWeight: 600, fontSize: '15px', letterSpacing: '-0.01em' }}>
@@ -210,11 +212,15 @@ export default function Login() {
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-2.5 mb-8 justify-center">
             <div style={{
-              width: '36px', height: '36px', borderRadius: '9px',
-              background: 'linear-gradient(135deg, #7c3aed, #a855f7)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '36px',
+              height: '36px',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
             }}>
-              <img src={logo} alt="AL Docbot Logo" style={{ width: '22px', height: '22px', objectFit: 'contain' }} />
+              <img src={logo} alt="AL Docbot Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scale(1.4)' }} />
             </div>
             <div>
               <div className="font-semibold text-gray-900 dark:text-white text-[15px]">AL Docbot</div>

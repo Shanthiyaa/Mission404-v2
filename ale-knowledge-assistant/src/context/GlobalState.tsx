@@ -130,23 +130,42 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
   const [unreadCount, setUnreadCount] = useState<number>(0)
 
   // --- Search Preferences ---
-  const [multiDoc, setMultiDocState] = useState<boolean>(() => {
-    const saved = localStorage.getItem('ale_pref_multidoc')
-    return saved !== null ? saved === 'true' : true
-  })
-  const [showCitations, setShowCitationsState] = useState<boolean>(() => {
-    const saved = localStorage.getItem('ale_pref_citations')
-    return saved !== null ? saved === 'true' : true
-  })
+  const [multiDoc, setMultiDocState] = useState<boolean>(true)
+  const [showCitations, setShowCitationsState] = useState<boolean>(true)
+
+  // Load preferences dynamically when user changes (login/logout/switch)
+  useEffect(() => {
+    if (user) {
+      const savedMultiDoc = localStorage.getItem(`ale_pref_${user.email}_multidoc`)
+      setMultiDocState(savedMultiDoc !== null ? savedMultiDoc === 'true' : true)
+
+      const savedCitations = localStorage.getItem(`ale_pref_${user.email}_citations`)
+      setShowCitationsState(savedCitations !== null ? savedCitations === 'true' : true)
+    } else {
+      const savedMultiDoc = localStorage.getItem('ale_pref_multidoc')
+      setMultiDocState(savedMultiDoc !== null ? savedMultiDoc === 'true' : true)
+
+      const savedCitations = localStorage.getItem('ale_pref_citations')
+      setShowCitationsState(savedCitations !== null ? savedCitations === 'true' : true)
+    }
+  }, [user])
 
   const setMultiDoc = (val: boolean) => {
     setMultiDocState(val)
-    localStorage.setItem('ale_pref_multidoc', String(val))
+    if (user) {
+      localStorage.setItem(`ale_pref_${user.email}_multidoc`, String(val))
+    } else {
+      localStorage.setItem('ale_pref_multidoc', String(val))
+    }
   }
 
   const setShowCitations = (val: boolean) => {
     setShowCitationsState(val)
-    localStorage.setItem('ale_pref_citations', String(val))
+    if (user) {
+      localStorage.setItem(`ale_pref_${user.email}_citations`, String(val))
+    } else {
+      localStorage.setItem('ale_pref_citations', String(val))
+    }
   }
 
   const saveScrollPosition = useCallback((id: string | number, top: number) => {

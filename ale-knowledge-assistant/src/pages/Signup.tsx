@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Brain, Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 import { useGlobalState } from '../context/GlobalState'
+import logo from '../logo.png'
 
 export default function Signup() {
   const navigate = useNavigate()
@@ -47,8 +48,8 @@ export default function Signup() {
         <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-8"
           style={{ boxShadow: '0 4px 40px rgba(0,0,0,0.08)' }}>
           <div className="text-center mb-6">
-            <div className="w-12 h-12 bg-purple-600 rounded-xl flex items-center justify-center mx-auto mb-3">
-              <Brain size={22} className="text-white" />
+            <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 shadow-md overflow-hidden">
+              <img src={logo} alt="AL Docbot Logo" className="w-full h-full object-cover scale-[1.4]" />
             </div>
             <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Create your account</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Join AL Docbot</p>
