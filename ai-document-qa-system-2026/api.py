@@ -929,8 +929,12 @@ async def upload_document(
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
         
+    # Calculate user's current storage space
+    user_docs = db.query(Document).filter(Document.user_id == user_id).all()
+    existing_storage = sum(doc.size_bytes for doc in user_docs)
+
     if user.role != "Admin":
-        doc_count = db.query(Document).filter(Document.user_id == user_id).count()
+        doc_count = len(user_docs)
         if doc_count >= 100:
             raise HTTPException(
                 status_code=400,
@@ -1053,6 +1057,15 @@ async def upload_document(
             raise HTTPException(status_code=500, detail=f"Error processing ZIP contents: {e}")
 
         if user.role != "Admin":
+            total_zip_size = sum(temp_sub_path.stat().st_size for _, _, temp_sub_path in valid_zip_files)
+            if existing_storage + total_zip_size > 512 * 1024 * 1024:
+                shutil.rmtree(temp_extract_dir, ignore_errors=True)
+                dest.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=400,
+                    detail="You have reached your 512 MB storage limit. Please delete documents or free up space to upload new files."
+                )
+
             if doc_count + len(valid_zip_files) > 100:
                 shutil.rmtree(temp_extract_dir, ignore_errors=True)
                 dest.unlink(missing_ok=True)
@@ -1123,6 +1136,13 @@ async def upload_document(
         
     else:
         file_size  = len(contents)
+        if user.role != "Admin":
+            if existing_storage + file_size > 512 * 1024 * 1024:
+                dest.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=400,
+                    detail="You have reached your 512 MB storage limit. Please delete documents or free up space to upload new files."
+                )
         page_count = _get_page_count(dest)
         doc_id  = str(uuid.uuid4())[:12]
 
@@ -1795,6 +1815,79 @@ async def get_stats(current_user: dict = Depends(get_current_user), db = Depends
             "processing_status": status_data
         }
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  STORAGE  —  GET /api/storage/summary  &  POST /api/storage/free-up-space
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/storage/summary")
+async def get_storage_summary(current_user: dict = Depends(get_current_user), db = Depends(get_db)):
+    user_id = current_user["user_id"]
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    
+    docs = db.query(Document).filter(Document.user_id == user_id).all()
+    used_bytes = sum(doc.size_bytes for doc in docs)
+    limit_bytes = 512 * 1024 * 1024  # 512 MB
+    
+    return {
+        "used_bytes": used_bytes,
+        "limit_bytes": limit_bytes,
+        "role": user.role or "Normal User"
+    }
+
+
+@app.post("/api/storage/free-up-space")
+async def free_up_space(current_user: dict = Depends(get_current_user), db = Depends(get_db)):
+    user_id = current_user["user_id"]
+    
+    # 1. Get all documents belonging to this user
+    docs = db.query(Document).filter(Document.user_id == user_id).all()
+    if not docs:
+        return {"success": True, "message": "Storage is already empty."}
+
+    filenames = [d.name for d in docs]
+    
+    # 2. Delete rows from DB
+    for doc in docs:
+        db.delete(doc)
+    db.commit()
+
+    # 3. Delete physical files from UPLOAD_PATH
+    for filename in filenames:
+        file_path = UPLOAD_PATH / filename
+        if file_path.exists():
+            try:
+                file_path.unlink()
+            except Exception as e:
+                log.error(f"Failed to unlink physical file {filename} during free-up-space: {e}")
+
+    # 4. Remove files from FAISS index in a thread-safe way
+    with _faiss_lock:
+        try:
+            from member2.vector_store import remove_filenames_from_faiss_index
+            remove_filenames_from_faiss_index(filenames)
+            try:
+                from member2.retriever import clear_cache
+                clear_cache()
+            except ImportError:
+                pass
+            _ensure_retriever()
+        except Exception as exc:
+            log.error(f"FAISS batch deletion during free-up-space failed: {exc}")
+
+    # 5. Log activity and send notification
+    _append_activity(user_id, "Cleared all files from knowledge base (Free Up Space)", color="bg-red-500")
+    _create_notification(
+        user_id,
+        type="doc_deleted",
+        text="All documents have been deleted from your knowledge base to free up space.",
+        link="/knowledge-base"
+    )
+
+    return {"success": True, "message": "Storage cleared successfully."}
 
 
 # ══════════════════════════════════════════════════════════════════════════════

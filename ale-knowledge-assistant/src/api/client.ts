@@ -332,3 +332,21 @@ export async function adminListUsers(): Promise<UserItem[]> {
 export async function adminDeleteUser(userId: number): Promise<{ success: boolean }> {
   return request<{ success: boolean }>(`/admin/users/${userId}`, { method: 'DELETE' })
 }
+
+// ── Storage ────────────────────────────────────────────────────────────────
+
+export interface StorageSummary {
+  used_bytes: number
+  limit_bytes: number
+  role: string
+}
+
+export async function getStorageSummary(): Promise<StorageSummary> {
+  return request<StorageSummary>('/storage/summary')
+}
+
+export async function freeUpSpace(): Promise<{ success: boolean; message: string }> {
+  return request<{ success: boolean; message: string }>('/storage/free-up-space', {
+    method: 'POST'
+  })
+}

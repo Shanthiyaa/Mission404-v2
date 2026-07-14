@@ -2,7 +2,8 @@ import { ReactNode, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, MessageSquare, Upload, BookOpen,
-  Settings, LogOut, Brain, Bell, Moon, Sun, Search, Shield, User
+  Settings, LogOut, Brain, Bell, Moon, Sun, Search, Shield, User,
+  PanelLeftClose, PanelLeftOpen
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useGlobalState } from '../context/GlobalState'
@@ -28,6 +29,17 @@ export default function Layout({ children, onLogout, dark, onToggleDark, user }:
   const navigate = useNavigate()
   const { unreadCount } = useGlobalState()
 
+  // Sidebar toggle state persisted in localStorage
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    const saved = localStorage.getItem('ale_sidebar_open')
+    return saved !== null ? saved === 'true' : true
+  })
+
+  const handleToggleSidebar = (val: boolean) => {
+    setSidebarOpen(val)
+    localStorage.setItem('ale_sidebar_open', String(val))
+  }
+
   // Compute initials from full name
   const initials = user
     ? user.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
@@ -45,72 +57,87 @@ export default function Layout({ children, onLogout, dark, onToggleDark, user }:
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-950 overflow-hidden">
-      <aside className="w-56 flex-shrink-0 flex flex-col no-print" style={{ background: '#1F1B2E' }}>
-        <div className="p-4 border-b border-white/10 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden">
-            <img src={logo} alt="AL Docbot Logo" className="w-full h-full object-contain" />
-          </div>
-          <div>
-            <div className="text-white text-sm font-medium leading-tight">AL Docbot</div>
-          </div>
-        </div>
-
-        <nav className="flex-1 p-2 overflow-y-auto">
-          <div className="text-white/30 text-xs uppercase tracking-wider px-2 py-2 mt-1">Main</div>
-          {NAV.map(({ to, label, icon: Icon, badge }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                clsx('sidebar-item mb-0.5', isActive && 'active')
-              }
-            >
-              <Icon size={16} className="flex-shrink-0" />
-              <span className="flex-1">{label}</span>
-              {badge && (
-                <span className="text-xs bg-purple-50 text-white px-1.5 py-0.5 rounded-full leading-none">
-                  {badge}
-                </span>
-              )}
-            </NavLink>
-          ))}
-          
-          {user?.role === 'Admin' && (
-            <>
-              <div className="text-white/30 text-xs uppercase tracking-wider px-2 py-2 mt-3">Administration</div>
-              <NavLink
-                to="/users"
-                className={({ isActive }) => clsx('sidebar-item mb-0.5', isActive && 'active')}
-              >
-                <Shield size={16} />
-                User Management
-              </NavLink>
-            </>
-          )}
-
-          <div className="mt-3 pt-2 border-t border-white/5">
+      <aside
+        className={clsx(
+          "flex-shrink-0 flex flex-col no-print transition-all duration-300 ease-in-out overflow-hidden",
+          sidebarOpen ? "w-56" : "w-0"
+        )}
+        style={{ background: '#1F1B2E' }}
+      >
+        <div className="w-56 flex flex-col h-full">
+          <div className="p-4 border-b border-white/10 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden">
+                <img src={logo} alt="AL Docbot Logo" className="w-full h-full object-contain" />
+              </div>
+              <div className="text-white text-sm font-medium leading-tight truncate">AL Docbot</div>
+            </div>
             <button
-              onClick={() => { onLogout(); navigate('/login') }}
-              className="sidebar-item w-full text-left"
+              onClick={() => handleToggleSidebar(false)}
+              className="text-white/60 hover:text-white transition-colors p-1 rounded-md hover:bg-white/10 flex-shrink-0"
+              title="Close sidebar"
             >
-              <LogOut size={16} />
-              Sign out
+              <PanelLeftClose size={18} />
             </button>
           </div>
-        </nav>
 
-        <div className="p-2 border-t border-white/10">
-          <div className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-white/10 cursor-pointer" onClick={() => navigate('/settings')}>
-            <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs font-medium flex-shrink-0 overflow-hidden">
-              {user?.profile_picture ? (
-                <img src={user.profile_picture} alt="Profile" className="w-full h-full object-cover" />
-              ) : (
-                <User size={16} className="text-purple-100" />
-              )}
+          <nav className="flex-1 p-2 overflow-y-auto">
+            <div className="text-white/30 text-xs uppercase tracking-wider px-2 py-2 mt-1">Main</div>
+            {NAV.map(({ to, label, icon: Icon, badge }) => (
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive }) =>
+                  clsx('sidebar-item mb-0.5', isActive && 'active')
+                }
+              >
+                <Icon size={16} className="flex-shrink-0" />
+                <span className="flex-1">{label}</span>
+                {badge && (
+                  <span className="text-xs bg-purple-50 text-white px-1.5 py-0.5 rounded-full leading-none">
+                    {badge}
+                  </span>
+                )}
+              </NavLink>
+            ))}
+            
+            {user?.role === 'Admin' && (
+              <>
+                <div className="text-white/30 text-xs uppercase tracking-wider px-2 py-2 mt-3">Administration</div>
+                <NavLink
+                  to="/users"
+                  className={({ isActive }) => clsx('sidebar-item mb-0.5', isActive && 'active')}
+                >
+                  <Shield size={16} />
+                  User Management
+                </NavLink>
+              </>
+            )}
+
+            <div className="mt-3 pt-2 border-t border-white/5">
+              <button
+                onClick={() => { onLogout(); navigate('/login') }}
+                className="sidebar-item w-full text-left"
+              >
+                <LogOut size={16} />
+                Sign out
+              </button>
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-white text-xs font-medium truncate">{displayName}</div>
-              <div className="text-white/40 text-xs truncate">{user?.role || ''}</div>
+          </nav>
+
+          <div className="p-2 border-t border-white/10">
+            <div className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-white/10 cursor-pointer" onClick={() => navigate('/settings')}>
+              <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs font-medium flex-shrink-0 overflow-hidden">
+                {user?.profile_picture ? (
+                  <img src={user.profile_picture} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  <User size={16} className="text-purple-100" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-white text-xs font-medium truncate">{displayName}</div>
+                <div className="text-white/40 text-xs truncate">{user?.role || ''}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -118,6 +145,15 @@ export default function Layout({ children, onLogout, dark, onToggleDark, user }:
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 px-5 py-3 flex items-center gap-3 flex-shrink-0 no-print">
+          {!sidebarOpen && (
+            <button
+              onClick={() => handleToggleSidebar(true)}
+              className="w-8 h-8 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all mr-1 flex-shrink-0 active:scale-95 hover:border-purple-500/30 dark:hover:border-purple-500/40 hover:text-purple-600"
+              title="Open sidebar"
+            >
+              <PanelLeftOpen size={16} />
+            </button>
+          )}
           <div className="flex-1 flex items-center gap-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 max-w-xs">
             <Search size={14} className="text-gray-400 flex-shrink-0" />
             <input

@@ -474,16 +474,32 @@ export function GlobalStateProvider({ children }: { children: React.ReactNode })
     expectedExt: string,
     catApiValue: string
   ) => {
+    const isNormalUser = user?.role !== 'Admin'
+    let currentStorage = documents.reduce((sum, doc) => sum + (doc.size_bytes || 0), 0)
+    const limitBytes = 512 * 1024 * 1024
+
     const newEntries: UploadFile[] = Array.from(selectedFiles).map(file => {
       const name = file.name.toLowerCase()
       const isValid = name.endsWith(expectedExt)
+      
+      let sizeError = null
+      if (isValid && isNormalUser) {
+        if (currentStorage + file.size > limitBytes) {
+          sizeError = "You have reached your 512 MB storage limit. Please delete documents or free up space to upload new files."
+        } else {
+          currentStorage += file.size
+        }
+      }
+
       return {
         file,
         taskId: null,
-        stage: isValid ? 'Uploading…' : 'Validation failed',
+        stage: (!isValid) ? 'Validation failed' : (sizeError ? 'Limit exceeded' : 'Uploading…'),
         progress: 0,
-        status: isValid ? ('uploading' as const) : ('error' as const),
-        error: isValid ? null : `Selected file type is ${fileType.split(' ')[0]}. Please upload only ${expectedExt} files.`,
+        status: (isValid && !sizeError) ? ('uploading' as const) : ('error' as const),
+        error: !isValid
+          ? `Selected file type is ${fileType.split(' ')[0]}. Please upload only ${expectedExt} files.`
+          : sizeError,
         chunks: 0,
       }
     })

@@ -32,10 +32,13 @@ export default function Upload() {
 
   const isNormalUser = user?.role !== 'Admin'
   const reachedLimit = isNormalUser && documents.length >= 100
+  const totalStorage = documents.reduce((sum, doc) => sum + (doc.size_bytes || 0), 0)
+  const reachedStorageLimit = isNormalUser && totalStorage >= 512 * 1024 * 1024
+  const isBlocked = reachedLimit || reachedStorageLimit
 
   // ── Handle file selection ─────────────────────────────────────────────────
   const handleFiles = async (selected: FileList | null) => {
-    if (!selected || reachedLimit) return
+    if (!selected || isBlocked) return
     const expectedExt = FILE_TYPE_EXT_MAP[fileType]
     const catApiValue = CATEGORY_API_MAP[cat] || 'unknown'
     await startUpload(selected, fileType, cat, expectedExt, catApiValue)
@@ -61,33 +64,42 @@ export default function Upload() {
         </div>
       )}
 
+      {reachedStorageLimit && (
+        <div className="mb-5 flex items-center gap-3 bg-red-50 dark:bg-red-900/20 border border-red-105 dark:border-red-800 text-red-600 dark:text-red-400 p-4 rounded-xl text-sm font-medium">
+          <AlertCircle size={18} className="flex-shrink-0" />
+          <div className="flex-1 leading-normal">
+            You have reached your 512 MB storage limit. Please delete documents or free up space to upload new files.
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-4">
         {/* ── Left column: drop zone + category ── */}
         <div>
           <div
-            onDragOver={e  => { e.preventDefault(); if (!reachedLimit) setDragging(true) }}
+            onDragOver={e  => { e.preventDefault(); if (!isBlocked) setDragging(true) }}
             onDragLeave={() => setDragging(false)}
             onDrop={e => {
               e.preventDefault()
               setDragging(false)
-              if (!reachedLimit) handleFiles(e.dataTransfer.files)
+              if (!isBlocked) handleFiles(e.dataTransfer.files)
             }}
-            onClick={() => { if (!reachedLimit) inputRef.current?.click() }}
+            onClick={() => { if (!isBlocked) inputRef.current?.click() }}
             className={clsx(
               'border-2 border-dashed rounded-xl p-10 text-center transition-colors mb-4',
-              reachedLimit
+              isBlocked
                 ? 'border-gray-250 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 cursor-not-allowed opacity-60'
                 : dragging
                   ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 cursor-pointer'
                   : 'border-purple-200 dark:border-purple-800 hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/10 cursor-pointer'
             )}
           >
-            <CloudUpload size={32} className={clsx('mx-auto mb-3', reachedLimit ? 'text-gray-400' : 'text-purple-500')} />
+            <CloudUpload size={32} className={clsx('mx-auto mb-3', isBlocked ? 'text-gray-400' : 'text-purple-500')} />
             <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">
-              {reachedLimit ? 'Upload Blocked' : `Drop ${fileType.split(' ')[0]} here`}
+              {isBlocked ? 'Upload Blocked' : `Drop ${fileType.split(' ')[0]} here`}
             </div>
             <div className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-              {reachedLimit ? 'Please delete documents to free up space' : 'or click to browse · up to 200 MB per file'}
+              {isBlocked ? 'Please delete documents to free up space' : 'or click to browse · up to 200 MB per file'}
             </div>
             <div className="flex gap-2 justify-center flex-wrap">
               {['User guides', 'Release notes', 'SQA test cases', 'KCS articles'].map(t => (
@@ -101,7 +113,7 @@ export default function Upload() {
               multiple
               className="hidden"
               onChange={e => handleFiles(e.target.files)}
-              disabled={reachedLimit}
+              disabled={isBlocked}
             />
           </div>
 
