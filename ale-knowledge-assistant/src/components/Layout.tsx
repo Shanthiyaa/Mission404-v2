@@ -48,7 +48,7 @@ export default function Layout({ children, onLogout, dark, onToggleDark, user }:
       <aside className="w-56 flex-shrink-0 flex flex-col no-print" style={{ background: '#1F1B2E' }}>
         <div className="p-4 border-b border-white/10 flex items-center gap-3">
           <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden">
-            <img src={logo} alt="AL Docbot Logo" className="w-full h-full object-cover scale-[1.4]" />
+            <img src={logo} alt="AL Docbot Logo" className="w-full h-full object-contain" />
           </div>
           <div>
             <div className="text-white text-sm font-medium leading-tight">AL Docbot</div>

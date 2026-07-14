@@ -116,7 +116,7 @@ export default function Login() {
             justifyContent: 'center',
             overflow: 'hidden',
           }}>
-            <img src={logo} alt="AL Docbot Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scale(1.4)' }} />
+            <img src={logo} alt="AL Docbot Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
           </div>
           <div>
             <div style={{ color: 'rgba(255,255,255,0.95)', fontWeight: 600, fontSize: '15px', letterSpacing: '-0.01em' }}>
@@ -220,7 +220,7 @@ export default function Login() {
               justifyContent: 'center',
               overflow: 'hidden',
             }}>
-              <img src={logo} alt="AL Docbot Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scale(1.4)' }} />
+              <img src={logo} alt="AL Docbot Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
             </div>
             <div>
               <div className="font-semibold text-gray-900 dark:text-white text-[15px]">AL Docbot</div>

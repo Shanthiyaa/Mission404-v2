@@ -184,7 +184,7 @@ export default function AdminLogin({ onToggleDark }: AdminLoginProps) {
                 margin: '0 auto 16px auto',
                 overflow: 'hidden',
               }}>
-                <img src={logo} alt="AL Docbot Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scale(1.4)' }} />
+                <img src={logo} alt="AL Docbot Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
               </div>
               <h2 className="text-2xl font-bold text-gray-900 tracking-tight">AL Docbot</h2>
               <p className="text-xs text-gray-400 mt-1 uppercase tracking-wider">Alcatel Lucent</p>
