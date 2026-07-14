@@ -1,0 +1,27 @@
+# ── Heavy / rarely-changed dependencies ──────────────────────────────────────
+# These are cached by Docker as a separate layer.
+# Only update this file if you need to change AI/ML library versions.
+
+# ── Extraction & chunking ─────────────────────────────────────────────────────
+PyMuPDF>=1.24.0
+python-docx>=1.1.0
+python-pptx>=0.6.21
+openpyxl>=3.1.2
+langchain>=0.1.0
+langchain-community>=0.3.0
+langchain-ollama>=0.3.0
+langchain-text-splitters>=0.2.0
+langdetect>=1.0.9
+
+# ── Embeddings ────────────────────────────────────────────────────────────────
+sentence-transformers>=2.7.0
+
+# ── Vector store ──────────────────────────────────────────────────────────────
+faiss-cpu>=1.8.0
+numpy>=1.24.0
+
+# ── LLM ──────────────────────────────────────────────────────────────────────
+ollama>=0.3.0
+
+# ── Streamlit (original UI — unchanged) ──────────────────────────────────────
+streamlit>=1.35.0
