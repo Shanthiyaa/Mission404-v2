@@ -138,6 +138,7 @@ export interface Document {
   name: string
   category: string
   size: string
+  size_bytes: number
   pages: number
   status: 'Indexed' | 'Processing' | 'Failed' | 'Unknown'
   uploaded_at: string

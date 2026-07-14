@@ -110,7 +110,7 @@ export default function Layout({ children, onLogout, dark, onToggleDark, user }:
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-white text-xs font-medium truncate">{displayName}</div>
-              <div className="text-white/40 text-xs truncate">{displayDept}</div>
+              <div className="text-white/40 text-xs truncate">{user?.role || ''}</div>
             </div>
           </div>
         </div>

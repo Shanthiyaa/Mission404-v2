@@ -1088,13 +1088,14 @@ async def upload_document(
             detected_category = _detect_category_from_filename(sub_filename, category)
             
             doc_id = str(uuid.uuid4())[:12]
+            sub_file_size = target_path.stat().st_size
             doc_entry = {
                 "id":          doc_id,
                 "name":        target_path.name,
                 "zip_member":  name,
                 "category":    detected_category,
-                "size":        "—",
-                "size_bytes":  0,
+                "size":        _human_size(sub_file_size),
+                "size_bytes":  sub_file_size,
                 "pages":       0,
                 "status":      "Processing",
                 "uploaded_at": datetime.utcnow().isoformat(),
@@ -1108,8 +1109,8 @@ async def upload_document(
                 user_id=user_id,
                 name=target_path.name,
                 category=detected_category,
-                size="—",
-                size_bytes=0,
+                size=_human_size(sub_file_size),
+                size_bytes=sub_file_size,
                 pages=0,
                 status="Processing",
                 task_id=task_id,
@@ -1637,6 +1638,7 @@ async def list_documents(current_user: dict = Depends(get_current_user), db = De
             "name":        d.name,
             "category":    d.category,
             "size":        d.size,
+            "size_bytes":  d.size_bytes,
             "pages":       d.pages,
             "status":      d.status,
             "uploaded_at": d.uploaded_at.isoformat(),

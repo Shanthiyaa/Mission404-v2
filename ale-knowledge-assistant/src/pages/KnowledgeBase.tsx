@@ -22,8 +22,21 @@ const CAT_LABEL: Record<string, string> = {
   'unknown':      'Unknown',
 }
 
+function formatBytes(bytes: number): string {
+  if (isNaN(bytes) || bytes <= 0) return '0.0 MB'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  if (i < 2) {
+    return `${(bytes / (k * k)).toFixed(2)} MB`
+  }
+  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`
+}
+
 export default function KnowledgeBase() {
   const { documents, docsLoading: loading, docsError: error, refreshDocuments: refresh, deleteDoc: remove } = useGlobalState()
+  const totalSizeBytes = documents.reduce((acc, d) => acc + (d.size_bytes || 0), 0)
+  const totalSizeFormatted = formatBytes(totalSizeBytes)
   const [searchParams]          = useSearchParams()
   const [filter, setFilter]     = useState('All')
   const [search, setSearch]     = useState(searchParams.get('q') || '')
@@ -119,6 +132,9 @@ export default function KnowledgeBase() {
                 {f}
               </button>
             ))}
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 border-l border-gray-200 dark:border-gray-700 pl-3 py-1">
+            Total Document Size: {totalSizeFormatted}
           </div>
           <div className="ml-auto text-xs text-gray-400">
             {loading ? 'Loading…' : `${filtered.length} document${filtered.length !== 1 ? 's' : ''}`}

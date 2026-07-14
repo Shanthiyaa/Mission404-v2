@@ -20,7 +20,6 @@ export default function Signup() {
     if (!name.trim()) e.name = 'Full name is required'
     if (!email.trim()) e.email = 'Email is required'
     else if (!/\S+@\S+\.\S+/.test(email)) e.email = 'Enter a valid email'
-    if (!department.trim()) e.department = 'Department is required'
     if (!password) e.password = 'Password is required'
     else if (password.length < 8) e.password = 'Enter 8 character password'
     setErrors(e)
@@ -33,7 +32,7 @@ export default function Signup() {
 
     setLoading(true)
     try {
-      await signup(name.trim(), email.trim(), department.trim(), password)
+      await signup(name.trim(), email.trim(), '', password)
       navigate('/login', { state: { signupSuccess: true } })
     } catch (err: any) {
       setErrors({ email: err.message || 'Signup failed. Please try again.' })
@@ -89,22 +88,7 @@ export default function Signup() {
               {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
             </div>
 
-            {/* Department */}
-            <div>
-              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Department</label>
-              <input
-                type="text"
-                value={department}
-                onChange={e => setDepartment(e.target.value)}
-                placeholder="e.g. Network Engineering"
-                className={`w-full rounded-lg border px-3.5 py-2.5 text-sm outline-none transition-all dark:bg-gray-800 dark:text-white
-                  ${errors.department
-                    ? 'border-red-400 focus:border-red-400 focus:ring-2 focus:ring-red-100'
-                    : 'border-gray-200 dark:border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 dark:focus:ring-purple-900/30'
-                  }`}
-              />
-              {errors.department && <p className="text-xs text-red-500 mt-1">{errors.department}</p>}
-            </div>
+
 
             {/* Password */}
             <div>

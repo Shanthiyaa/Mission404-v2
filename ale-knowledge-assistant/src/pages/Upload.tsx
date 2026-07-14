@@ -50,7 +50,6 @@ export default function Upload() {
     <div>
       <div className="mb-5">
         <h1 className="text-xl font-medium text-gray-900 dark:text-white">Upload documents</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Add PDFs or ZIP archives to your knowledge base for AI-powered search</p>
       </div>
 
       {reachedLimit && (
